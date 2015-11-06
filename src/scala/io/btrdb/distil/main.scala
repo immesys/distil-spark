@@ -91,6 +91,7 @@ package object distil {
       })
     }
 
+/*
     def persistToBtrdb(streams : Seq[UUID])
     {
       if (streams.size != rdd._2.size)
@@ -117,6 +118,7 @@ package object distil {
       })
     }
   }
+  */
   implicit class DistilSparkContext(val sc : SparkContext) extends AnyVal
   {
     def BTRDB_LATEST_VER = 0

@@ -61,6 +61,7 @@ package object distil {
         alignIterTo120HzUsingFloor(vz)
       })
     }
+    /*
     def persistToBtrdb(stream : UUID)
     {
       //Note that we assume that partitions don't overlap
@@ -77,6 +78,7 @@ package object distil {
           throw BTrDBException("Error: " + stat)
       })
     }
+    */
   }
   implicit class DistilMultiRDD(val rdd : RDD[(Long, immutable.Seq[Double])])
   {

@@ -6,6 +6,9 @@ version := "0.1.0"
 
 scalaVersion := "2.10.4"
 
+resolvers +=
+  "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
+
 libraryDependencies += "io.btrdb" %% "btrdb" % "0.1.0"
 
 libraryDependencies += "org.apache.spark" %% "spark-core" % "1.5.1"

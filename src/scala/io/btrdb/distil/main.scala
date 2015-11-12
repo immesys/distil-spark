@@ -15,7 +15,7 @@ import java.time._
 object DslImplementation {
   import distil._
 
-  case class BTrDBTimestamp (t : Long)
+
 
   type BTrDBAlignMethod = (Iterator[(Long, Double)]) => Iterator[(Long, Double)]
 
@@ -260,12 +260,9 @@ object DslImplementation {
 
       var bDropNaN = mods contains DROPNAN
 
-      println("Doing match")
       sel match {
         case ONE => {
-          println("doing ONE")
           var so = streamMetadatas(0)
-          println("SO IS: ", so)
           var dat = sc.btrdbStream(so("uuid"), startT.t, endT.t, sc.BTRDB_LATEST_VER)
           (so, dat).asInstanceOf[T]
         }
@@ -290,6 +287,8 @@ object DslImplementation {
 
 package object distil {
 
+  case class BTrDBTimestamp (t : Long)
+  
   object dsl {
 
     import DslImplementation._

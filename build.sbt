@@ -9,7 +9,7 @@ scalaVersion := "2.10.4"
 resolvers +=
   "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
-libraryDependencies += "io.btrdb" %% "btrdb" % "0.1.0"
+libraryDependencies += "io.btrdb" %% "btrdb" % "0.1.1"
 
 libraryDependencies += "org.mongodb" %% "casbah" % "3.0.0"
 

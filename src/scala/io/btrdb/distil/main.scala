@@ -426,13 +426,13 @@ package object distil {
       val targetHost = btrdbHost
       rdd.foreachPartition((vz : Iterator[(Long, Double)]) =>
       {
-        val dat = vz.toIndexedSeq
-        if (dat.size > 0) {
+        if (vz.hasNext) {
           var b = new BTrDB(targetHost, 4410)
-          val bracketStart = dat.view.map(_._1).min
-          val bracketEnd = dat.view.map(_._1).max
-          b.deleteValues(stream, bracketStart, bracketEnd)
-          val stat = b.insertValues(stream, dat.view.map( t => RawTuple(t._1, t._2)).iterator)
+          //val bracketStart = vz.view.map(_._1).min
+          //val bracketEnd = dat.view.map(_._1).max
+          //b.deleteValues(stream, bracketStart, bracketEnd)
+          val stat = b.insertValues(stream, vz.map(t => RawTuple(t._1, t._2)))
+          b.close()
           if (stat != "OK")
             throw BTrDBException("Error: " + stat)
         }
@@ -462,7 +462,7 @@ package object distil {
           var b = new BTrDB(targetHost, 4410)
           val bracketStart = dat.view.map(_._1).min
           val bracketEnd = dat.view.map(_._1).max
-          streams.zipWithIndex.foreach(u =>
+          val rv = streams.zipWithIndex.foreach(u =>
           {
             var stat = b.deleteValues(u._1, bracketStart, bracketEnd)
             if (stat != "OK")
@@ -472,6 +472,8 @@ package object distil {
             if (stat != "OK")
               throw BTrDBException("Error: " + stat)
           })
+          b.close()
+          rv
         }
       })
     }
@@ -513,13 +515,15 @@ package object distil {
       sc.parallelize(chunks).mapPartitions( (vz : Iterator[(Long, Long)]) =>
       {
         var b = new BTrDB(targetHost, 4410)
-        vz.flatMap( v =>
+        val rv = vz.flatMap( v =>
         {
           var (stat, ver, it) = b.getRaw(stream, v._1, v._2, version)
           if (stat != "OK")
             throw BTrDBException("Error: "+stat)
           it.map(x => (x.t, x.v)).toIndexedSeq
         })
+        b.close()
+        rv
       })
     }
 
@@ -548,7 +552,7 @@ package object distil {
       sc.parallelize(chunks).mapPartitions( (vz : Iterator[(Long, Long)] ) =>
       {
         var b = new BTrDB(targetHost, 4410)
-        vz.flatMap( v =>
+        val rv = vz.flatMap( v =>
         {
           var raw_ires = streams.zip(versions).map(s =>
           {
@@ -576,6 +580,8 @@ package object distil {
             }))
           })
         })
+        b.close()
+        rv
       })
     }
   }

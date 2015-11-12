@@ -488,10 +488,11 @@ package object distil {
 
     def BTRDB_ALIGN_120HZ_FLOOR = alignIterTo120HzUsingFloor _
 
-    def initDistil(btrdb : String)
+    def initDistil(btrdb : String, mongo : String)
     {
       implicitSparkContext = sc
       btrdbHost = btrdb
+      mongoHost = mongo
     }
     def btrdbStream(stream : String, startTime : Long, endTime : Long, version : Long)
       : RDD[(Long, Double)] =
@@ -578,9 +579,9 @@ package object distil {
 
   implicit var implicitSparkContext : org.apache.spark.SparkContext = null
   //In package object ensure Mongo connection
-  private val mongoClient: MongoClient = MongoClient()
+  private lazy val mongoClient: MongoClient = MongoClient(mongoHost)
   private lazy val mongoDB = mongoClient("qdf")
-  var metadataCollection = mongoDB("metadata2")
+  lazy val metadataCollection = mongoDB("metadata2")
   private var btrdbHost = "localhost"
-
+  private var mongoHost = "localhost"
 }

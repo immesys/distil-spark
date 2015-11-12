@@ -288,7 +288,7 @@ object DslImplementation {
 package object distil {
 
   case class BTrDBTimestamp (t : Long)
-  
+
   object dsl {
 
     import DslImplementation._
@@ -297,12 +297,12 @@ package object distil {
       try {
         val t = ZonedDateTime.parse(s)
         val i = t.toInstant()
-        BTrDBTimestamp(i.getEpochSecond() + i.getNano().toLong)
+        BTrDBTimestamp(i.getEpochSecond()*1000000000 + i.getNano().toLong)
       } catch {
         case e : java.time.format.DateTimeParseException => {
           val t = LocalDateTime.parse(s)
           val i = t.toInstant(ZoneOffset.UTC)
-          BTrDBTimestamp(i.getEpochSecond() + i.getNano().toLong)
+          BTrDBTimestamp(i.getEpochSecond()*1000000000 + i.getNano().toLong)
         }
       }
     }

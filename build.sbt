@@ -11,6 +11,8 @@ resolvers +=
 
 libraryDependencies += "io.btrdb" %% "btrdb" % "0.1.0"
 
+libraryDependencies += "org.mongodb" %% "casbah" % "3.0.0"
+
 libraryDependencies += "org.apache.spark" %% "spark-core" % "1.5.1"
 
 mainClass in (Compile, run) := Some("io.btrdb.distil.Main")

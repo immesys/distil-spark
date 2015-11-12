@@ -366,7 +366,7 @@ package object distil {
   }
 
 
-  var loc_btrdb = new BTrDB("localhost", 4410)
+  lazy val loc_btrdb = new BTrDB(btrdbHost, 4410)
   def alignIterTo120HzUsingSnapClosest(vz : Iterator[(Long, Double)])
     : Iterator[(Long, Double)] =
   {
@@ -428,7 +428,7 @@ package object distil {
       {
         val dat = vz.toIndexedSeq
         if (dat.size > 0) {
-          var b = new BTrDB("localhost", 4410)
+          var b = new BTrDB(btrdbHost, 4410)
           val bracketStart = dat.view.map(_._1).min
           val bracketEnd = dat.view.map(_._1).max
           b.deleteValues(stream, bracketStart, bracketEnd)
@@ -458,7 +458,7 @@ package object distil {
       {
         val dat = vz.toIndexedSeq
         if (dat.size > 0) {
-          var b = new BTrDB("localhost", 4410)
+          var b = new BTrDB(btrdbHost, 4410)
           val bracketStart = dat.view.map(_._1).min
           val bracketEnd = dat.view.map(_._1).max
           streams.zipWithIndex.foreach(u =>
@@ -488,9 +488,10 @@ package object distil {
 
     def BTRDB_ALIGN_120HZ_FLOOR = alignIterTo120HzUsingFloor _
 
-    def initDistil()
+    def initDistil(btrdb : String)
     {
       implicitSparkContext = sc
+      btrdbHost = btrdb
     }
     def btrdbStream(stream : String, startTime : Long, endTime : Long, version : Long)
       : RDD[(Long, Double)] =
@@ -508,7 +509,7 @@ package object distil {
       }
       sc.parallelize(chunks).mapPartitions( (vz : Iterator[(Long, Long)]) =>
       {
-        var b = new BTrDB("localhost", 4410)
+        var b = new BTrDB(btrdbHost, 4410)
         vz.flatMap( v =>
         {
           var (stat, ver, it) = b.getRaw(stream, v._1, v._2, version)
@@ -542,7 +543,7 @@ package object distil {
       }
       sc.parallelize(chunks).mapPartitions( (vz : Iterator[(Long, Long)] ) =>
       {
-        var b = new BTrDB("localhost", 4410)
+        var b = new BTrDB(btrdbHost, 4410)
         vz.flatMap( v =>
         {
           var raw_ires = streams.zip(versions).map(s =>
@@ -580,5 +581,6 @@ package object distil {
   private val mongoClient: MongoClient = MongoClient()
   private lazy val mongoDB = mongoClient("qdf")
   var metadataCollection = mongoDB("metadata2")
+  private var btrdbHost = "localhost"
 
 }

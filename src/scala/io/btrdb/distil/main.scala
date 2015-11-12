@@ -424,11 +424,12 @@ package object distil {
     {
       //Note that we assume that partitions don't overlap
       //I believe this is correct, but it might not be
+      val targetHost = btrdbHost
       rdd.foreachPartition((vz : Iterator[(Long, Double)]) =>
       {
         val dat = vz.toIndexedSeq
         if (dat.size > 0) {
-          var b = new BTrDB(btrdbHost, 4410)
+          var b = new BTrDB(targetHost, 4410)
           val bracketStart = dat.view.map(_._1).min
           val bracketEnd = dat.view.map(_._1).max
           b.deleteValues(stream, bracketStart, bracketEnd)
@@ -454,11 +455,12 @@ package object distil {
     {
       //Note that we assume that partitions don't overlap
       //I believe this is correct, but it might not be
+      val targetHost = btrdbHost
       rdd.foreachPartition((vz : Iterator[(Long, immutable.Seq[Double])]) =>
       {
         val dat = vz.toIndexedSeq
         if (dat.size > 0) {
-          var b = new BTrDB(btrdbHost, 4410)
+          var b = new BTrDB(targetHost, 4410)
           val bracketStart = dat.view.map(_._1).min
           val bracketEnd = dat.view.map(_._1).max
           streams.zipWithIndex.foreach(u =>
@@ -508,9 +510,10 @@ package object distil {
         val pair = (st,t)
         chunks += pair
       }
+      val targetHost = btrdbHost
       sc.parallelize(chunks).mapPartitions( (vz : Iterator[(Long, Long)]) =>
       {
-        var b = new BTrDB(btrdbHost, 4410)
+        var b = new BTrDB(targetHost, 4410)
         vz.flatMap( v =>
         {
           var (stat, ver, it) = b.getRaw(stream, v._1, v._2, version)
@@ -532,6 +535,7 @@ package object distil {
       : RDD[(Long, immutable.Seq[Double])] =
     {
 
+      val targetHost = btrdbHost
       var chunks : mutable.Buffer[(Long, Long)] = mutable.Buffer()
       var t = startTime
       val chunkSize = 5*60*1000000000L //5 mins
@@ -544,7 +548,7 @@ package object distil {
       }
       sc.parallelize(chunks).mapPartitions( (vz : Iterator[(Long, Long)] ) =>
       {
-        var b = new BTrDB(btrdbHost, 4410)
+        var b = new BTrDB(targetHost, 4410)
         vz.flatMap( v =>
         {
           var raw_ires = streams.zip(versions).map(s =>

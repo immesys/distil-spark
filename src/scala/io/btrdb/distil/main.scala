@@ -572,10 +572,10 @@ package object distil {
             val ts = idxz.zipWithIndex.map( x => ires(x._1)(x._2)._1).min
             (ts, (0 until ires.size).map(i =>
             {
-              if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts)
+              if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts) {
                 idxz(i) = idxz(i) + 1
                 Double.NaN
-              else {
+              } else {
                 idxz(i) = idxz(i) + 1
                 ires(i)(idxz(i) - 1)._2
               }

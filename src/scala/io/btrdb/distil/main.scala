@@ -522,7 +522,8 @@ package object distil {
             throw BTrDBException("Error: "+stat)
           it.map(x => (x.t, x.v)).toIndexedSeq
         })
-        b.close()
+        //As above, can;t do this
+        //b.close()
         rv
       })
     }
@@ -580,7 +581,8 @@ package object distil {
             }))
           })
         })
-        b.close()
+        //can't do this
+        //b.close()
         rv
       })
     }

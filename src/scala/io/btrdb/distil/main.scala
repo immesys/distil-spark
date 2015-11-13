@@ -565,15 +565,16 @@ package object distil {
             case Some(f) => raw_ires.map(_.iterator).map(f).map(_.toIndexedSeq)
             case None => raw_ires
           }
+          //ires is now Seq[ Iter (time, value) ]
           var idxz = streams.map(_ => 0).toBuffer
           val rvlen = ires.map(_.size).max
           (0 until rvlen).map(_ =>
           {
-            val ts = idxz.zipWithIndex.map( x => ires(x._1)(x._2)._1).min
+            val ts = idxz.zipWithIndex.filter( x => x._1 < ires(x._2).size ).map( x => ires(x._2)(x._1)._1).min
             (ts, (0 until ires.size).map(i =>
             {
               if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts) {
-                idxz(i) = idxz(i) + 1
+                //idxz(i) = idxz(i) + 1
                 Double.NaN
               } else {
                 idxz(i) = idxz(i) + 1

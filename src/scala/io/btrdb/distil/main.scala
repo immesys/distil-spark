@@ -573,6 +573,7 @@ package object distil {
             (ts, (0 until ires.size).map(i =>
             {
               if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts)
+                idxz(i) = idxz(i) + 1
                 Double.NaN
               else {
                 idxz(i) = idxz(i) + 1

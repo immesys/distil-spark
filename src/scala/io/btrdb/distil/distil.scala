@@ -191,6 +191,45 @@ package object distil {
     new DenseIterator(rng._1, rng._2, aligned, 8333333, 1000000)
   }
 
+  //This function can be called from a remote context, it doesn't use sc
+  def multipleBtrdbStreamLocal(conn : BTrDB, streams : immutable.Seq[String], range : (Long, Long), versions : immutable.Seq[Long],
+    align : Option[BTrDBAlignMethod] = None)
+    : IndexedSeq[(Long, immutable.IndexedSeq[Double])] =
+  {
+    var raw_ires = streams.zip(versions).map(s =>
+    {
+      var (stat, ver, it) = conn.getRaw(s._1, range._1, range._2, s._2)
+      if (stat != "OK")
+          throw BTrDBException("Error: "+stat)
+      it.map(x => (x.t, x.v)).toIndexedSeq
+    })
+    var ires = align match
+    {
+      case Some(f) => raw_ires.map(_.iterator).map(v => f(Some(range), v)).map(_.toIndexedSeq)
+      case None => raw_ires
+    }
+    //ires is now Seq[ Iter (time, value) ]
+    var idxz = streams.map(_ => 0).toBuffer
+    val rvlen = ires.map(_.size).max
+    val rv = (0 until rvlen).map(_ =>
+    {
+      //Zip into (idx, streamnumber) filter out where the idx is greater than the stream length
+      //map that onto just the timestamp at the index, and get the minimum
+      val ts = idxz.zipWithIndex.filter( x => x._1 < ires(x._2).size ).map( x => ires(x._2)(x._1)._1).min
+      (ts, (0 until ires.size).map(i =>
+      {
+        if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts) {
+          //idxz(i) = idxz(i) + 1
+          Double.NaN
+        } else {
+          idxz(i) = idxz(i) + 1
+          ires(i)(idxz(i) - 1)._2
+        }
+      }))
+    })
+    rv
+  }
+
   implicit class DistilSingleRDD(val rdd : RDD[(Long, Double)]) extends AnyVal
   {
     def alignTo120HzUsingSnapClosest()
@@ -229,12 +268,12 @@ package object distil {
       })
     }
   }
-  implicit class DistilMultiRDD(val rdd : RDD[(Long, immutable.Seq[Double])])
+  implicit class DistilMultiRDD(val rdd : RDD[(Long, immutable.IndexedSeq[Double])])
   {
     def dropNaNs()
-      : RDD[(Long, immutable.Seq[Double])] =
+      : RDD[(Long, immutable.IndexedSeq[Double])] =
     {
-      rdd.mapPartitions((vz : Iterator[(Long, immutable.Seq[Double])]) =>
+      rdd.mapPartitions((vz : Iterator[(Long, immutable.IndexedSeq[Double])]) =>
       {
         vz.filter( x => !(x._2.exists( y => y.isNaN) ))
       })
@@ -245,7 +284,7 @@ package object distil {
       //Note that we assume that partitions don't overlap
       //I believe this is correct, but it might not be
       val targetHost = btrdbHost
-      rdd.foreachPartition((vz : Iterator[(Long, immutable.Seq[Double])]) =>
+      rdd.foreachPartition((vz : Iterator[(Long, immutable.IndexedSeq[Double])]) =>
       {
         val dat = vz.toIndexedSeq
         if (dat.size > 0) {
@@ -488,50 +527,10 @@ package object distil {
           new KillConnIterator(rv, b)
       })
     }
-    //This function can be called from a remote context, it doesn't use sc
-    def multipleBtrdbStreamLocal(conn : BTrDB, streams : immutable.Seq[String], range : (Long, Long), versions : immutable.Seq[Long], killconn : Boolean,
-      align : Option[BTrDBAlignMethod] = None)
-      : Iterator[(Long, immutable.Seq[Double])] =
-    {
-      var raw_ires = streams.zip(versions).map(s =>
-      {
-        var (stat, ver, it) = conn.getRaw(s._1, range._1, range._2, s._2)
-        if (stat != "OK")
-            throw BTrDBException("Error: "+stat)
-        it.map(x => (x.t, x.v)).toIndexedSeq
-      })
-      var ires = align match
-      {
-        case Some(f) => raw_ires.map(_.iterator).map(v => f(Some(range), v)).map(_.toIndexedSeq)
-        case None => raw_ires
-      }
-      //ires is now Seq[ Iter (time, value) ]
-      var idxz = streams.map(_ => 0).toBuffer
-      val rvlen = ires.map(_.size).max
-      val rv = (0 until rvlen).map(_ =>
-      {
-        //Zip into (idx, streamnumber) filter out where the idx is greater than the stream length
-        //map that onto just the timestamp at the index, and get the minimum
-        val ts = idxz.zipWithIndex.filter( x => x._1 < ires(x._2).size ).map( x => ires(x._2)(x._1)._1).min
-        (ts, (0 until ires.size).map(i =>
-        {
-          if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts) {
-            //idxz(i) = idxz(i) + 1
-            Double.NaN
-          } else {
-            idxz(i) = idxz(i) + 1
-            ires(i)(idxz(i) - 1)._2
-          }
-        }))
-      })
-      if (killconn)
-        new KillConnIterator(rv.iterator, conn)
-      else
-        rv.iterator
-    }
+
     def multipleBtrdbStreams(streams : immutable.Seq[String], startTime : Long, endTime : Long, versions : immutable.Seq[Long],
       align : Option[BTrDBAlignMethod] = None)
-      : RDD[(Long, immutable.Seq[Double])] =
+      : RDD[(Long, immutable.IndexedSeq[Double])] =
     {
       checkInit()
       val targetHost = btrdbHost
@@ -550,7 +549,7 @@ package object distil {
         var b = getBTrDB(targetHost)
         val rv = vz.flatMap( v =>
         {
-          multipleBtrdbStreamLocal(b, streams, v, versions, false, align)
+          multipleBtrdbStreamLocal(b, streams, v, versions, align)
         })
         new KillConnIterator(rv, b)
       })

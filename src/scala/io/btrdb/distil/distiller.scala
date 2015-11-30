@@ -1,5 +1,6 @@
 package io.btrdb.distil
 
+import io.btrdb._
 import io.jvm.uuid._
 import scala.collection.immutable
 import scala.collection.mutable
@@ -53,6 +54,7 @@ abstract class Distiller {
   private var nextParamVer : Int = -1
   private var lastVersion : Int = -1
   private var outputUUIDs : immutable.Map[String, String] = Map()
+  private var inputUUIDs : immutable.SortedMap[String, String] = immutable.SortedMap()
   private var requireFullRecomputation : Boolean = false
   var params : immutable.Map[String, String] = Map()
 
@@ -139,19 +141,23 @@ abstract class Distiller {
     //set of metadata from all the outputs
     val matches2 = SELECT(METADATA) WHERE "distil/instance" =~ instanceID
     var useIDX = 0
-    inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name).toLong ):_* )
+    inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name)
+      .split(':')(1).toLong ):_* )
 
     matches2.zipWithIndex.foreach(s => {
       inputNames.foreach(name => {
         if (s._1("distil/inputs/"+name).toInt < inputVersions(name)) {
           useIDX = s._2
-          inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name).toLong ):_* )
+          inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name)
+            .split(':')(1).toLong ):_* )
         }
       })
     })
     lastParamVer = matches2(useIDX)("distil/paramver").toInt
     lastVersion = matches2(useIDX)("distil/version").toInt
     nextParamVer = matches2(useIDX)("distil/nextparamver").toInt
+    inputUUIDs = immutable.SortedMap( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name)
+      .split(':')(0)):_* )
 
     if (matches2.size != outputNames.size) {
       println("The algorithm output arity does not match the found streams\nWill do full recompute to ensure consistency")
@@ -201,18 +207,28 @@ abstract class Distiller {
   //   rdd
   // }
 
-  def deleteDefaultRanges(range : (Long, Long)) {
-
+  def deleteAllRanges(range : (Long, Long)) (implicit db : BTrDB) {
+    outputUUIDs.map { case (_, uu) => {
+      val stat = db.deleteValues(uu, range._1, range._2)
+      if (stat != "OK") {
+        throw DistillerException("could not delete range")
+      }
+    }}
   }
-  def deleteRange(output : String, range : (Long, Long)) {
 
+  def deleteRange(output : String, range : (Long, Long)) (implicit db : BTrDB) {
+    val stat = db.deleteValues(outputUUIDs(output), range._1, range._2)
+    if (stat != "OK") {
+      throw DistillerException("could not delete range")
+    }
   }
 
   def kernel(range : (Long, Long),
              rangeStartIdx : Int,
-             input : Seq[(Long, Seq[Double])],
+             input : IndexedSeq[(Long, IndexedSeq[Double])],
              inputMap : Map[String, Int],
-             output : Map[String, mutable.ArrayBuffer[(Long, Double)]])
+             output : Map[String, mutable.ArrayBuffer[(Long, Double)]],
+             db : BTrDB)
 
   def materialize(path : String) (implicit sc : org.apache.spark.SparkContext) {
     loadinfo(path, sc)
@@ -253,26 +269,34 @@ abstract class Distiller {
     }
 
     //Should be a tuple of (idx, (fetchstart, fetchend), (rangestart, rangend))
-    val invocationParams = (Stream from 1).zip(newRanges.zip(fetchRanges))
+    val invocationParams = ((Stream from 1), newRanges, fetchRanges).zipped.toList
 
     println(s"Processing a total of ${fetchRanges.size} ranges")
 
-    //Stage 4: make the RDD
+    //Stage 4: load the partitions
     //Buffer for serialization
     val targetBTrDB = io.btrdb.distil.btrdbHost
-    /*
     sc.parallelize(invocationParams).map (p => {
-      val (idx, fetch, range) = p
-        var b = new BTrDB(targetBTrDB)
-        var raw_ires = streams.zip(versions).map(s =>
-          {
-            var (stat, ver, it) = b.getRaw(s._1, v._1, v._2, s._2)
-            if (stat != "OK")
-                throw BTrDBException("Error: "+stat)
-            it.map(x => (x.t, x.v)).toIndexedSeq
-          })
+      val idx = p._1
+      val fetch = p._2
+      val range = p._3
+      val b = new BTrDB(targetBTrDB, 4410)
+      val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
+      val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)
+      val inputVerSeq = inputUUIDs.map(kv => inputCurrentVersions(kv._1)).toIndexedSeq
+
+      val data = io.btrdb.distil.multipleBtrdbStreamLocal(b, inputUUIDSeq,
+        fetch, inputVerSeq, timeBaseAlignment)
+
+      val output = immutable.Map(outputNames.map(name => (name, new mutable.ArrayBuffer[(Long, Double)](data.length))):_*)
+      val dstartIdx = data.indexWhere(_._1 >= range._1)
+      val thn = System.currentTimeMillis
+      kernel(range, dstartIdx, data, inputMap, output, b)
+      val delta = System.currentTimeMillis - thn
+      println(s"Kernel processing completed in $delta ms")
+      b.close()
+
       })
-      */
   }
 }
 
@@ -296,9 +320,10 @@ class MovingAverageDistiller extends Distiller {
 
   override def kernel(range : (Long, Long),
                rangeStartIdx : Int,
-               input : Seq[(Long, Seq[Double])],
+               input : IndexedSeq[(Long, IndexedSeq[Double])],
                inputMap : Map[String, Int],
-               output : Map[String, mutable.ArrayBuffer[(Long, Double)]]) = {
+               output : Map[String, mutable.ArrayBuffer[(Long, Double)]],
+               db : BTrDB) = {
     //Our inputs are dense, so we can just use indexes. we will use 120 indexes
     val out = output("avg")
     for (i <- rangeStartIdx until input.size) {

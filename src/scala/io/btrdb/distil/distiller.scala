@@ -16,10 +16,11 @@ case class StreamNotFoundException(msg : String) extends RootDistillerException(
 
  MATERIALIZE (Path)
  or
- MKDISTILLATE (JAR, CLASS) INPUTS (wiring map)
+ MKDISTILLATE (CLASS) INPUTS (wiring map)
       OUTPUTS (wiring map) PARAM (param map)
       AFTER "date" BEFORE "date"
-      LAZY | EAGER
+      ADDJAR "jar uri"
+      AS "name"
 
  INPUTS is a map from <symbolic name> to <path>
  OUTPUTS is a map from <symbolic name> to <path>
@@ -28,7 +29,9 @@ case class StreamNotFoundException(msg : String) extends RootDistillerException(
 
  A distillate stream has the following metadata tags:
  distil/instance : uuid (same for all outputs of a given instance)
+ distil/instanceName : symbolic name given at creation time
  distil/classpath : (list of JAR URIs seperatated by commas)
+ distil/class : Actual class
  distil/version : <version>
  distil/paramver : <version>
  distil/nextparamver : <version> //set when params are changed
@@ -37,7 +40,59 @@ case class StreamNotFoundException(msg : String) extends RootDistillerException(
  distil/output : symbolic name of this output
  distil/param/<symbolic name> : value
  */
-abstract class Distiller {
+object Distiller {
+  def makeDistillate(klass : String, inputs : Map[String, String],
+        outputs: Map[String, String], params: Map[String, String], name: String, jars: Seq[String])
+    = {
+      import io.btrdb.distil.dsl._
+      //Check that none of the outputs exist
+      outputs.foreach(kv => {
+        val res = SELECT (METADATA) WHERE "Path" =~ kv._2
+        if (!res.isEmpty) {
+          throw DistillerException(s"Output stream: ${kv._2} exists")
+        }
+      })
+      val instanceID = io.jvm.uuid.UUID.random.toString
+      val loadedVersion = 1 //TODO get from jar
+
+      //Create all of the outputs
+      outputs.foreach(kv => {
+        (CREATE (kv._2) WITH (
+          "distil/instance" -> instanceID,
+          "distil/class" -> klass,
+          "distil/instanceName" -> name,
+          "distil/classpath" -> jars.mkString(","),
+          "distil/version" -> loadedVersion.toString,
+          "distil/paramver" -> "1",
+          "distil/nextparamver" -> "1",
+          "distil/automaterialize" -> "false",
+          "distil/output" -> kv._1
+        )
+        WITH (params.map(kv => ("distil/param/"+kv._1,kv._2)).toSeq:_*)
+        WITH (inputs.map(kv => ("distil/inputs/"+kv._1,RESOLVE(kv._2).get+":1")).toSeq:_*)
+        FROM ())
+        println(s"created ${kv._2}")
+      })
+  }
+  def constructDistiller(klass : String, classpath : Seq[String]) : Distiller = {
+    /*var classLoader = new URLClassLoader(Array[URL](
+  new File("module.jar").toURI.toURL))
+var clazz = classLoader.loadClass(Module.ModuleClassName)*/
+    var classloader = this.getClass.getClassLoader
+    var k = classloader.loadClass(klass)
+    var rv : Distiller = k.newInstance().asInstanceOf[Distiller]
+    rv
+  }
+  def genericMaterialize(path : String) : Long = {
+    import io.btrdb.distil.dsl._
+    val res = SELECT(METADATA) WHERE "Path" =~ path
+    if (res.isEmpty) throw StreamNotFoundException(s"Could not find $path")
+    println("res0 was: ", res(0))
+    val dd = constructDistiller(res(0)("distil/class"), res(0)("distil/classpath").split(','))
+    dd.materialize(path)
+  }
+}
+abstract class Distiller extends Serializable {
   //Abstract algorithm-specific members
   val version : Int
   val maintainer : String
@@ -76,9 +131,6 @@ abstract class Distiller {
       Some((start, end))
   }
 
-  def deleteRange(range : (Long, Long)) = {
-
-  }
   def expandPrereqsParallel(changedRanges : Seq[(Long, Long)]) : Seq[(Long, Long)] = {
     var ranges : mutable.ArrayBuffer[(Long, Long, Boolean)] = mutable.ArrayBuffer(changedRanges.map(x=>(x._1, x._2, false)):_*)
     var combinedRanges : mutable.ArrayBuffer[(Long, Long)] = mutable.ArrayBuffer()
@@ -137,16 +189,18 @@ abstract class Distiller {
           s"$path does not seem to be a distillate")))
       .toString
 
+    println("chk: ", instanceID == matches(0).get("distil/instance"))
     //Find all streams for this instance. We are trying to find the earliest
     //set of metadata from all the outputs
     val matches2 = SELECT(METADATA) WHERE "distil/instance" =~ instanceID
+    println(s"matches2 is $matches2, instanceID is $instanceID")
     var useIDX = 0
     inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name)
       .split(':')(1).toLong ):_* )
 
     matches2.zipWithIndex.foreach(s => {
       inputNames.foreach(name => {
-        if (s._1("distil/inputs/"+name).toInt < inputVersions(name)) {
+        if (s._1("distil/inputs/"+name).split(":")(1).toLong < inputVersions(name)) {
           useIDX = s._2
           inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name)
             .split(':')(1).toLong ):_* )
@@ -185,7 +239,7 @@ abstract class Distiller {
     //Lets get the current versions of the inputs
     val btrdb = sc.openDefaultBTrDB()
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
-    val (errcode, vers) = btrdb.getVersions(keyseq)
+    val (errcode, vers) = btrdb.getVersions(keyseq.map(inputUUIDs(_)))
     if (errcode != "OK") throw DistillerException("BTrDB error: "+errcode)
     inputCurrentVersions = immutable.Map( keyseq.zip(vers.toIndexedSeq):_* )
     btrdb.close()
@@ -230,7 +284,7 @@ abstract class Distiller {
              output : Map[String, mutable.ArrayBuffer[(Long, Double)]],
              db : BTrDB)
 
-  def materialize(path : String) (implicit sc : org.apache.spark.SparkContext) {
+  def materialize(path : String) (implicit sc : org.apache.spark.SparkContext) : Long = {
     loadinfo(path, sc)
 
     //Stage 1: find all the changed ranges in the inputs
@@ -238,17 +292,18 @@ abstract class Distiller {
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
     val someChange = keyseq.exists(k => inputVersions(k) != inputCurrentVersions(k))
     if (!someChange) {
-      return
+      0L
     }
     val ranges = keyseq.filter(k => inputVersions(k) != inputCurrentVersions(k))
                        .flatMap(k => {
-      val (errcode, _, cranges) = btrdb.getChangedRanges(k, inputVersions(k), inputCurrentVersions(k), 34)
+      val (errcode, _, cranges) = btrdb.getChangedRanges(inputUUIDs(k), inputVersions(k), inputCurrentVersions(k), 34)
       cranges.map(x=>(x.start, x.end))
     }).toIndexedSeq
     btrdb.close()
 
     //Stage 2: merge the changed ranges to a single set of ranges
     val combinedRanges = expandPrereqsParallel(ranges)
+    println(s"combinedRanges is: $combinedRanges")
     val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / sc.defaultParallelism,
                                  30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
 
@@ -294,9 +349,13 @@ abstract class Distiller {
       kernel(range, dstartIdx, data, inputMap, output, b)
       val delta = System.currentTimeMillis - thn
       println(s"Kernel processing completed in $delta ms")
-      b.close()
-
+      output.foreach(kv => {
+        val uu = outputUUIDs(kv._1)
+        b.insertValues(uu, kv._2.view.iterator.map(tup => RawTuple(tup._1, tup._2)), true)
       })
+      b.close()
+      output.map(kv => kv._2.size).foldLeft(0L)(_+_)
+    }).reduce(_+_)
   }
 }
 
@@ -330,5 +389,40 @@ class MovingAverageDistiller extends Distiller {
       //For now its identity
       out += ((input(i)._1 , input(i)._2(0)))
     }
+    deleteAllRanges(range)(db)
+  }
+}
+
+class DoublerDistiller extends Distiller {
+  import io.btrdb.distil.dsl._
+
+  val version : Int
+    = 1
+  val maintainer : String
+    = "Michael Andersen"
+  val outputNames : Seq[String]
+    = List("output")
+  val inputNames : Seq[String]
+    = List("input")
+  val kernelSizeNanos : Option[Long]
+    = Some(1.second)
+  val timeBaseAlignment : Option[BTrDBAlignMethod]
+    = Some(BTRDB_ALIGN_120HZ_SNAP_DENSE)
+  val dropNaNs : Boolean
+    = false
+
+  override def kernel(range : (Long, Long),
+               rangeStartIdx : Int,
+               input : IndexedSeq[(Long, IndexedSeq[Double])],
+               inputMap : Map[String, Int],
+               output : Map[String, mutable.ArrayBuffer[(Long, Double)]],
+               db : BTrDB) = {
+    //Our inputs are dense, so we can just use indexes. we will use 120 indexes
+    val out = output("output")
+    for (i <- rangeStartIdx until input.size) {
+      //For now its identity
+      out += ((input(i)._1 , input(i)._2(0)*2))
+    }
+    deleteAllRanges(range)(db)
   }
 }

@@ -15,7 +15,7 @@ import java.time._
 object DslImplementation {
   import distil._
 
-  
+
 
   case class selectorSingleDataType()
 
@@ -76,7 +76,7 @@ object DslImplementation {
       "("+field+", RLIKE, "+pattern+")"
     }
     override def generate() : MongoDBObject = {
-      return MongoDBObject(field -> MongoDBObject("$regex" -> pattern))
+      return MongoDBObject(field.replaceAll("/",".") -> MongoDBObject("$regex" -> pattern))
     }
   }
   case class AndWhereExpression(lhs : WhereExpression, rhs : WhereExpression) extends WhereExpression {
@@ -92,7 +92,7 @@ object DslImplementation {
       "("+field+", EQ, "+rhs+")"
     }
     override def generate() : MongoDBObject = {
-      return MongoDBObject(field -> rhs)
+      return MongoDBObject(field.replaceAll("/",".") -> rhs)
     }
   }
 
@@ -147,7 +147,7 @@ object DslImplementation {
       }
       convObj(m2)
     }
-    def FROM (rdd : RDD[(Long, Double)]): String = {
+    def FROM (): String = {
       val dat : mutable.Map[String, String] = mutable.Map()
       for (t <- meta) dat(t._1) = t._2
       val ks = dat.keySet
@@ -174,8 +174,12 @@ object DslImplementation {
       }
       var obj = buildObj(dat)
       metadataCollection.insert(obj)
-      rdd.persistToBtrdb(dat("uuid"))
       dat("uuid")
+    }
+    def FROM (rdd : RDD[(Long, Double)]): String = {
+      val uu = FROM()
+      rdd.persistToBtrdb(uu)
+      uu
     }
   }
 /*
@@ -252,7 +256,8 @@ object DslImplementation {
               target += (if (pfx == "") k -> s else (pfx+"/"+k) -> s)
             }
             case dd : com.mongodb.BasicDBObject => {
-              add(dd, pfx + "/" + k, target)
+              val npfx = (if (pfx == "") "" else pfx+"/")
+              add(dd, npfx + k, target)
             }
             case default => {
             }

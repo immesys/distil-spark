@@ -85,6 +85,15 @@ package object distil {
         new Selector[Any, MetadataResult](sc.BTRDB_MIN_TIME, sc.BTRDB_MAX_TIME, sel, Seq.empty[QueryModifier], None, None, false)
     }
 
+    def RESOLVE (path : String) : Option[String] = {
+      val res = SELECT(METADATA) WHERE "Path" =~ path
+      if (res.isEmpty) {
+        None
+      } else {
+        Some(res(0)("uuid"))
+      }
+    }
+
     def SET (tuples : (String, String)*): Setter = {
       new Setter(tuples)
     }
@@ -95,6 +104,10 @@ package object distil {
 
     def DROP (path : String) {
       metadataCollection.remove(MongoDBObject("Path" -> path))
+    }
+
+    def MATERIALIZE (path : String) : Long = {
+      io.btrdb.distil.Distiller.genericMaterialize(path)
     }
 
     def BTRDB_ALIGN_120HZ_SNAP = alignIterTo120HzUsingSnapClosest _

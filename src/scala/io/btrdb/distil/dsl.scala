@@ -1,4 +1,4 @@
-package io.btrdb
+package io.btrdb.distil
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -15,7 +15,7 @@ import java.time._
 object DslImplementation {
   import distil._
 
-  type BTrDBAlignMethod = (Iterator[(Long, Double)]) => Iterator[(Long, Double)]
+  
 
   case class selectorSingleDataType()
 

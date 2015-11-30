@@ -14,6 +14,8 @@ import java.time._
 
 package object distil {
 
+  type BTrDBAlignMethod = (Option[(Long, Long)], Iterator[(Long, Double)]) => Iterator[(Long, Double)]
+
   case class BTrDBTimestamp (t : Long)
 
   object dsl {
@@ -94,10 +96,18 @@ package object distil {
     def DROP (path : String) {
       metadataCollection.remove(MongoDBObject("Path" -> path))
     }
+
+    def BTRDB_ALIGN_120HZ_SNAP = alignIterTo120HzUsingSnapClosest _
+
+    def BTRDB_ALIGN_120HZ_SNAP_DENSE = alignIterTo120HzUsingSnapClosestDense _
+
+    def BTRDB_ALIGN_120HZ_FLOOR = alignIterTo120HzUsingFloor _
+
+    def BTRDB_ALIGN_120HZ_FLOOR_DENSE = alignIterTo120HzUsingFloorDense _
   }
 
   lazy val loc_btrdb = new BTrDB(btrdbHost, 4410)
-  def alignIterTo120HzUsingSnapClosest(vz : Iterator[(Long, Double)])
+  def alignIterTo120HzUsingSnapClosest(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])
     : Iterator[(Long, Double)] =
   {
     vz.map( v =>
@@ -120,7 +130,48 @@ package object distil {
     })
   }
 
-  def alignIterTo120HzUsingFloor(vz : Iterator[(Long, Double)])
+  class DenseIterator(start: Long, end: Long, vz : Iterator[(Long, Double)], interval : Long, roundwhen : Long)
+    extends Iterator[(Long, Double)] {
+    var head : Option[(Long, Double)] = Some(vz.next)
+    var now : Long = start
+    def hasNext() : Boolean = {
+      head match {
+        case Some(x) => true
+        case None => now < end
+      }
+    }
+    def next() : (Long, Double) = {
+      val rv = head match {
+        case Some(v) =>
+          if (v._1 == now) {
+            head = (if (vz.hasNext) Some(vz.next()) else None)
+            v
+          } else {
+            (now, Double.NaN)
+          }
+        case None =>
+          (now, Double.NaN)
+      }
+      now += interval
+      val delta = now % 1000000000L
+      if (delta < roundwhen) {
+        now -= delta
+      } else if (delta > 1000000000L- roundwhen) {
+        now += 1000000000L - delta
+      }
+      rv
+    }
+  }
+
+  def alignIterTo120HzUsingSnapClosestDense(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])
+    : Iterator[(Long, Double)] =
+  {
+    val rng = range.getOrElse(throw BTrDBException("Dense align with no bounds?"))
+    val aligned = alignIterTo120HzUsingSnapClosest(None, vz)
+    new DenseIterator(rng._1, rng._2, aligned, 8333333, 1000000)
+  }
+
+  def alignIterTo120HzUsingFloor(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])
     : Iterator[(Long, Double)] =
   {
     vz.map( v =>
@@ -132,6 +183,14 @@ package object distil {
     })
   }
 
+  def alignIterTo120HzUsingFloorDense(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])
+    : Iterator[(Long, Double)] =
+  {
+    val rng = range.getOrElse(throw BTrDBException("Dense align with no bounds?"))
+    val aligned = alignIterTo120HzUsingFloor(None, vz)
+    new DenseIterator(rng._1, rng._2, aligned, 8333333, 1000000)
+  }
+
   implicit class DistilSingleRDD(val rdd : RDD[(Long, Double)]) extends AnyVal
   {
     def alignTo120HzUsingSnapClosest()
@@ -139,7 +198,7 @@ package object distil {
     {
       rdd.mapPartitions((vz : Iterator[(Long, Double)]) =>
       {
-        alignIterTo120HzUsingSnapClosest(vz)
+        alignIterTo120HzUsingSnapClosest(None, vz)
       })
     }
     def alignTo120HzUsingFloor()
@@ -147,7 +206,7 @@ package object distil {
     {
       rdd.mapPartitions((vz : Iterator[(Long, Double)]) =>
       {
-        alignIterTo120HzUsingFloor(vz)
+        alignIterTo120HzUsingFloor(None, vz)
       })
     }
     def persistToBtrdb(stream : String)
@@ -220,7 +279,11 @@ package object distil {
 
     def BTRDB_ALIGN_120HZ_SNAP = alignIterTo120HzUsingSnapClosest _
 
+    def BTRDB_ALIGN_120HZ_SNAP_DENSE = alignIterTo120HzUsingSnapClosestDense _
+
     def BTRDB_ALIGN_120HZ_FLOOR = alignIterTo120HzUsingFloor _
+
+    def BTRDB_ALIGN_120HZ_FLOOR_DENSE = alignIterTo120HzUsingFloorDense _
 
     def initDistil(btrdb : String, mongo : String)
     {
@@ -261,6 +324,8 @@ package object distil {
         new KillConnIterator(rv, b)
       })
     }
+
+    def openDefaultBTrDB() = getBTrDB(btrdbHost)
 
     def deleteBTrdbRange(stream : String, startTime : Long, endTime : Long) : Unit = {
       checkInit()
@@ -423,8 +488,49 @@ package object distil {
           new KillConnIterator(rv, b)
       })
     }
+    //This function can be called from a remote context, it doesn't use sc
+    def multipleBtrdbStreamLocal(conn : BTrDB, streams : immutable.Seq[String], range : (Long, Long), versions : immutable.Seq[Long], killconn : Boolean,
+      align : Option[BTrDBAlignMethod] = None)
+      : Iterator[(Long, immutable.Seq[Double])] =
+    {
+      var raw_ires = streams.zip(versions).map(s =>
+      {
+        var (stat, ver, it) = conn.getRaw(s._1, range._1, range._2, s._2)
+        if (stat != "OK")
+            throw BTrDBException("Error: "+stat)
+        it.map(x => (x.t, x.v)).toIndexedSeq
+      })
+      var ires = align match
+      {
+        case Some(f) => raw_ires.map(_.iterator).map(v => f(Some(range), v)).map(_.toIndexedSeq)
+        case None => raw_ires
+      }
+      //ires is now Seq[ Iter (time, value) ]
+      var idxz = streams.map(_ => 0).toBuffer
+      val rvlen = ires.map(_.size).max
+      val rv = (0 until rvlen).map(_ =>
+      {
+        //Zip into (idx, streamnumber) filter out where the idx is greater than the stream length
+        //map that onto just the timestamp at the index, and get the minimum
+        val ts = idxz.zipWithIndex.filter( x => x._1 < ires(x._2).size ).map( x => ires(x._2)(x._1)._1).min
+        (ts, (0 until ires.size).map(i =>
+        {
+          if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts) {
+            //idxz(i) = idxz(i) + 1
+            Double.NaN
+          } else {
+            idxz(i) = idxz(i) + 1
+            ires(i)(idxz(i) - 1)._2
+          }
+        }))
+      })
+      if (killconn)
+        new KillConnIterator(rv.iterator, conn)
+      else
+        rv.iterator
+    }
     def multipleBtrdbStreams(streams : immutable.Seq[String], startTime : Long, endTime : Long, versions : immutable.Seq[Long],
-      align : Option[Iterator[(Long, Double)] => Iterator[(Long, Double)]] = None)
+      align : Option[BTrDBAlignMethod] = None)
       : RDD[(Long, immutable.Seq[Double])] =
     {
       checkInit()
@@ -444,40 +550,8 @@ package object distil {
         var b = getBTrDB(targetHost)
         val rv = vz.flatMap( v =>
         {
-          var raw_ires = streams.zip(versions).map(s =>
-          {
-            var (stat, ver, it) = b.getRaw(s._1, v._1, v._2, s._2)
-            if (stat != "OK")
-                throw BTrDBException("Error: "+stat)
-            it.map(x => (x.t, x.v)).toIndexedSeq
-          })
-          var ires = align match
-          {
-            case Some(f) => raw_ires.map(_.iterator).map(f).map(_.toIndexedSeq)
-            case None => raw_ires
-          }
-          //ires is now Seq[ Iter (time, value) ]
-          var idxz = streams.map(_ => 0).toBuffer
-          val rvlen = ires.map(_.size).max
-          (0 until rvlen).map(_ =>
-          {
-            //Zip into (idx, streamnumber) filter out where the idx is greater than the stream length
-            //map that onto just the timestamp at the index, and get the minimum
-            val ts = idxz.zipWithIndex.filter( x => x._1 < ires(x._2).size ).map( x => ires(x._2)(x._1)._1).min
-            (ts, (0 until ires.size).map(i =>
-            {
-              if (idxz(i) >= ires(i).size || ires(i)(idxz(i))._1 != ts) {
-                //idxz(i) = idxz(i) + 1
-                Double.NaN
-              } else {
-                idxz(i) = idxz(i) + 1
-                ires(i)(idxz(i) - 1)._2
-              }
-            }))
-          })
+          multipleBtrdbStreamLocal(b, streams, v, versions, false, align)
         })
-        //can't do this
-        //b.close()
         new KillConnIterator(rv, b)
       })
     }
@@ -508,6 +582,6 @@ package object distil {
   private lazy val mongoClient: MongoClient = MongoClient(mongoHost)
   private lazy val mongoDB = mongoClient("qdf")
   lazy val metadataCollection = mongoDB("metadata2")
-  private var btrdbHost = "localhost"
+  var btrdbHost = "localhost"
   private var mongoHost = "localhost"
 }

@@ -152,11 +152,13 @@ abstract class Distiller extends Serializable {
           }
         }
       }
+      println(s"Located minidx as $minidx prog=$progress")
       //Now see if any other ranges' starts lie before the end of min
       for (ri <- ranges.zipWithIndex) {
         if (ri._1._3) {}  //used up
         else if (ri._2 == minidx) {}
         else if (ri._1._1 <= ranges(minidx)._2) {
+          println(s"comparing against $ri")
           //This range's start lies before the end of min
           //set minidx's end to the max of the new range and min's end
           ranges(minidx) = (ranges(minidx)._1, math.max(ranges(minidx)._2, ri._1._2), false)
@@ -171,6 +173,7 @@ abstract class Distiller extends Serializable {
         val t = (ranges(minidx)._1 , ranges(minidx)._2)
         combinedRanges += t
         ranges(minidx) = (0,0, true)
+        println(s"replacing minidx")
       }
     }
     combinedRanges

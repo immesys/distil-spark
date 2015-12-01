@@ -419,7 +419,7 @@ class DoublerDistiller extends Distiller {
   val kernelSizeNanos : Option[Long]
     = Some(1.second)
   val timeBaseAlignment : Option[BTrDBAlignMethod]
-    = Some(BTRDB_ALIGN_120HZ_SNAP_DENSE)
+    = Some(BTRDB_ALIGN_120HZ_SNAP)
   val dropNaNs : Boolean
     = false
 

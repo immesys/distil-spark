@@ -139,6 +139,7 @@ abstract class Distiller extends Serializable {
 
     var notDone = true
     while (notDone) {
+      println(s"Iterating on PRRR: ranges=$ranges cr=$combinedRanges")
       var progress = false
       var combined = false
       var minidx = 0
@@ -304,7 +305,8 @@ abstract class Distiller extends Serializable {
     btrdb.close()
 
     //Stage 2: merge the changed ranges to a single set of ranges
-    val combinedRanges = ranges//expandPrereqsParallel(ranges)
+    println(s"precombinedRanges is: $ranges")
+    val combinedRanges = expandPrereqsParallel(ranges)
     println(s"combinedRanges is: $combinedRanges")
     val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / sc.defaultParallelism,
                                  30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
@@ -347,7 +349,6 @@ abstract class Distiller extends Serializable {
       val output = immutable.Map(outputNames.map(name => (name, new mutable.ArrayBuffer[(Long, Double)](data.length))):_*)
       val dstartIdx = data.indexWhere(_._1 >= range._1)
       val thn = System.currentTimeMillis
-      println(s"kernel processed: $idx, $range")
       kernel(range, dstartIdx, data, inputMap, output, b)
       val delta = System.currentTimeMillis - thn
 

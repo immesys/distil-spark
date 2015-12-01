@@ -190,7 +190,6 @@ abstract class Distiller extends Serializable {
           s"$path does not seem to be a distillate")))
       .toString
 
-    println("chk: ", instanceID == matches(0).get("distil/instance"))
     //Find all streams for this instance. We are trying to find the earliest
     //set of metadata from all the outputs
     val matches2 = SELECT(METADATA) WHERE "distil/instance" =~ instanceID
@@ -302,9 +301,7 @@ abstract class Distiller extends Serializable {
     btrdb.close()
 
     //Stage 2: merge the changed ranges to a single set of ranges
-    println(s"precombinedRanges is: $ranges")
     val combinedRanges = Distiller.expandPrereqsParallel(ranges)
-    println(s"combinedRanges is: $combinedRanges")
     val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / sc.defaultParallelism,
                                  30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
 
@@ -315,7 +312,6 @@ abstract class Distiller extends Serializable {
         (r._1 + i*partitionHint,
          math.min(r._1 + (i+1)*partitionHint, r._2))
       }
-      println(s"turned $r into $rv")
       rv
     })
 

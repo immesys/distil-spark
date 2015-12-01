@@ -51,7 +51,6 @@ class MovingAverageDistiller extends Distiller {
 }
 
 class DoublerDistiller extends Distiller {
-  println("Concrete distiller instantiated")
   import io.btrdb.distil.dsl._
 
   val version : Int

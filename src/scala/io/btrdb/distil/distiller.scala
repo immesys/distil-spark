@@ -331,23 +331,29 @@ abstract class Distiller extends Serializable {
     //Stage 4: load the partitions
     //Buffer for serialization
     val targetBTrDB = io.btrdb.distil.btrdbHost
+    println("XXX -B")
     sc.parallelize(invocationParams).map (p => {
+      println("XXX -A", p)
       val idx = p._1
       val fetch = p._2
       val range = p._3
       val b = new BTrDB(targetBTrDB, 4410)
+      println("Created BTrDB conn")
       val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
       val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)
       val inputVerSeq = inputUUIDs.map(kv => inputCurrentVersions(kv._1)).toIndexedSeq
-
+      println("XXX A")
       val data = io.btrdb.distil.multipleBtrdbStreamLocal(b, inputUUIDSeq,
         fetch, inputVerSeq, timeBaseAlignment)
-
+      println("XXX B")
       val output = immutable.Map(outputNames.map(name => (name, new mutable.ArrayBuffer[(Long, Double)](data.length))):_*)
+      println("XXX C")
       val dstartIdx = data.indexWhere(_._1 >= range._1)
+      println("XXX D")
       val thn = System.currentTimeMillis
       kernel(range, dstartIdx, data, inputMap, output, b)
       val delta = System.currentTimeMillis - thn
+      println("XXX E")
       /*
       println(s"Kernel processing completed in $delta ms")
       output.foreach(kv => {

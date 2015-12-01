@@ -339,7 +339,7 @@ abstract class Distiller extends Serializable {
       val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
       val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)
       val inputVerSeq = inputUUIDs.map(kv => inputCurrentVersions(kv._1)).toIndexedSeq
-
+      /*
       val data = io.btrdb.distil.multipleBtrdbStreamLocal(b, inputUUIDSeq,
         fetch, inputVerSeq, timeBaseAlignment)
 
@@ -354,7 +354,8 @@ abstract class Distiller extends Serializable {
         b.insertValues(uu, kv._2.view.iterator.map(tup => RawTuple(tup._1, tup._2)), true)
       })
       b.close()
-      output.map(kv => kv._2.size).foldLeft(0L)(_+_)
+      output.map(kv => kv._2.size).foldLeft(0L)(_+_)*/
+      5L
     }).reduce(_+_)
   }
 }

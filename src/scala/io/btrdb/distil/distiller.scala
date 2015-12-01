@@ -339,7 +339,7 @@ abstract class Distiller extends Serializable {
       val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
       val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)
       val inputVerSeq = inputUUIDs.map(kv => inputCurrentVersions(kv._1)).toIndexedSeq
-      /*
+
       val data = io.btrdb.distil.multipleBtrdbStreamLocal(b, inputUUIDSeq,
         fetch, inputVerSeq, timeBaseAlignment)
 
@@ -348,6 +348,7 @@ abstract class Distiller extends Serializable {
       val thn = System.currentTimeMillis
       kernel(range, dstartIdx, data, inputMap, output, b)
       val delta = System.currentTimeMillis - thn
+      /*
       println(s"Kernel processing completed in $delta ms")
       output.foreach(kv => {
         val uu = outputUUIDs(kv._1)

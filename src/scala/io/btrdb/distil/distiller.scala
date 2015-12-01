@@ -92,7 +92,9 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
     dd.materialize(path)
   }
 }
+@SerialVersionUID(100L)
 abstract class Distiller extends Serializable {
+  println("Abstract distiller instantiated")
   //Abstract algorithm-specific members
   val version : Int
   val maintainer : String
@@ -402,6 +404,7 @@ class MovingAverageDistiller extends Distiller {
 }
 
 class DoublerDistiller extends Distiller {
+  println("Concrete distiller instantiated")
   import io.btrdb.distil.dsl._
 
   val version : Int

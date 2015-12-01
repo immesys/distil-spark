@@ -145,6 +145,7 @@ package object distil {
 
   class DenseIterator(start: Long, end: Long, vz : Iterator[(Long, Double)], interval : Long, roundwhen : Long)
     extends Iterator[(Long, Double)] {
+    println(s"Dense iterator constructed s=$start e=$end i=$interval")
     var head : Option[(Long, Double)] = Some(vz.next)
     var now : Long = start
     def hasNext() : Boolean = {
@@ -154,6 +155,9 @@ package object distil {
       }
     }
     def next() : (Long, Double) = {
+      if (now > end) {
+        throw new RuntimeException("huh")
+      }
       val rv = head match {
         case Some(v) =>
           if (v._1 == now) {

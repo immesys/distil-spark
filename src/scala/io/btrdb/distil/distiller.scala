@@ -91,6 +91,51 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
     val dd = constructDistiller(res(0)("distil/class"), res(0)("distil/classpath").split(','))
     dd.materialize(path)
   }
+  def expandPrereqsParallel(changedRanges : Seq[(Long, Long)]) : Seq[(Long, Long)] = {
+    var ranges : mutable.ArrayBuffer[(Long, Long, Boolean)] = mutable.ArrayBuffer(changedRanges.map(x=>(x._1, x._2, false)):_*)
+    var combinedRanges : mutable.ArrayBuffer[(Long, Long)] = mutable.ArrayBuffer()
+
+    var notDone = true
+    while (notDone) {
+      println(s"Iterating on PRRR: ranges=$ranges cr=$combinedRanges")
+      var progress = false
+      var combined = false
+      var minidx = 0
+      for (ri <- ranges.zipWithIndex) {
+        if (!ri._1._3) {
+          progress = true
+          //If another range starts before minidx
+          if (ranges(minidx)._3 || ri._1._1 < ranges(minidx)._1) {
+            minidx = ri._2 //we zipped with index
+          }
+        }
+      }
+      println(s"Located minidx as $minidx prog=$progress")
+      //Now see if any other ranges' starts lie before the end of min
+      for (ri <- ranges.zipWithIndex) {
+        if (ri._1._3) {}  //used up
+        else if (ri._2 == minidx) {}
+        else if (ri._1._1 <= ranges(minidx)._2) {
+          println(s"comparing against $ri")
+          //This range's start lies before the end of min
+          //set minidx's end to the max of the new range and min's end
+          ranges(minidx) = (ranges(minidx)._1, math.max(ranges(minidx)._2, ri._1._2), false)
+          //Remove the new range (it is subsumed)
+          ranges(ri._2) = (0,0, true)
+          combined = true
+        }
+      }
+      if (!progress) {
+        notDone = false
+      } else if (!combined) {
+        val t = (ranges(minidx)._1 , ranges(minidx)._2)
+        combinedRanges += t
+        ranges(minidx) = (0,0, true)
+        println(s"replacing minidx")
+      }
+    }
+    combinedRanges
+  }
 }
 @SerialVersionUID(100L)
 abstract class Distiller extends Serializable {
@@ -133,51 +178,7 @@ abstract class Distiller extends Serializable {
       Some((start, end))
   }
 
-  def expandPrereqsParallel(changedRanges : Seq[(Long, Long)]) : Seq[(Long, Long)] = {
-    var ranges : mutable.ArrayBuffer[(Long, Long, Boolean)] = mutable.ArrayBuffer(changedRanges.map(x=>(x._1, x._2, false)):_*)
-    var combinedRanges : mutable.ArrayBuffer[(Long, Long)] = mutable.ArrayBuffer()
 
-    var notDone = true
-    while (notDone) {
-      println(s"Iterating on PRRR: ranges=$ranges cr=$combinedRanges")
-      var progress = false
-      var combined = false
-      var minidx = 0
-      for (ri <- ranges.zipWithIndex) {
-        if (!ri._1._3) {
-          progress = true
-          //If another range starts before minidx
-          if (ri._1._1 < ranges(minidx)._1) {
-            minidx = ri._2 //we zipped with index
-          }
-        }
-      }
-      println(s"Located minidx as $minidx prog=$progress")
-      //Now see if any other ranges' starts lie before the end of min
-      for (ri <- ranges.zipWithIndex) {
-        if (ri._1._3) {}  //used up
-        else if (ri._2 == minidx) {}
-        else if (ri._1._1 <= ranges(minidx)._2) {
-          println(s"comparing against $ri")
-          //This range's start lies before the end of min
-          //set minidx's end to the max of the new range and min's end
-          ranges(minidx) = (ranges(minidx)._1, math.max(ranges(minidx)._2, ri._1._2), false)
-          //Remove the new range (it is subsumed)
-          ranges(ri._2) = (0,0, true)
-          combined = true
-        }
-      }
-      if (!progress) {
-        notDone = false
-      } else if (!combined) {
-        val t = (ranges(minidx)._1 , ranges(minidx)._2)
-        combinedRanges += t
-        ranges(minidx) = (0,0, true)
-        println(s"replacing minidx")
-      }
-    }
-    combinedRanges
-  }
 
   private def loadinfo(path : String, sc : org.apache.spark.SparkContext) {
     import io.btrdb.distil.dsl._
@@ -309,7 +310,7 @@ abstract class Distiller extends Serializable {
 
     //Stage 2: merge the changed ranges to a single set of ranges
     println(s"precombinedRanges is: $ranges")
-    val combinedRanges = expandPrereqsParallel(ranges)
+    val combinedRanges = Distiller.expandPrereqsParallel(ranges)
     println(s"combinedRanges is: $combinedRanges")
     val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / sc.defaultParallelism,
                                  30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...

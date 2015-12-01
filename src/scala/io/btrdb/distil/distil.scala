@@ -148,7 +148,6 @@ package object distil {
 
   class DenseIterator(start: Long, end: Long, vz : Iterator[(Long, Double)], interval : Long, roundwhen : Long)
     extends Iterator[(Long, Double)] {
-    println(s"Dense iterator constructed s=$start e=$end i=$interval")
     var head : Option[(Long, Double)] = Some(vz.next)
     var now : Long = start
     def hasNext() : Boolean = {
@@ -161,7 +160,6 @@ package object distil {
       if (now > end) {
         throw new RuntimeException("huh")
       }
-      println(s"iter now=$now head=$head hz=${vz.hasNext}")
       val rv = head match {
         case Some(v) =>
           if (v._1 <= now) {
@@ -174,14 +172,12 @@ package object distil {
           (now, Double.NaN)
       }
       now += interval
-      println(s"now premodified: $now")
       val delta = now % 1000000000L
       if (delta < roundwhen) {
         now -= delta
       } else if (delta > 1000000000L- roundwhen) {
         now += 1000000000L - delta
       }
-      println(s"now postmodified: $now")
       rv
     }
   }

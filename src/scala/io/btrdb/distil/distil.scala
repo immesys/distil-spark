@@ -158,6 +158,7 @@ package object distil {
       if (now > end) {
         throw new RuntimeException("huh")
       }
+      println(s"iter now=$now head=$head hz=${vz.hasNext}")
       val rv = head match {
         case Some(v) =>
           if (v._1 == now) {

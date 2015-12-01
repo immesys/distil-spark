@@ -84,7 +84,7 @@ object DslImplementation {
       "("+lhs.toString+", AND, "+rhs.toString+")"
     }
     override def generate() : MongoDBObject = {
-      return MongoDBObject("$and" -> Array(lhs,rhs))
+      return MongoDBObject("$and" -> Array(lhs.generate(),rhs.generate()))
     }
   }
   case class LiteralWhereExpression(field : String, rhs : String) extends WhereExpression {
@@ -247,6 +247,8 @@ object DslImplementation {
 
       //First step: grab all the metadata that matches
       var query = w.generate()
+      println("query string: ", w.toString)
+      println("query raw: ", query)
       var res = metadataCollection.find(query)
 
       def add (d : MongoDBObject, pfx : String, target : mutable.Map[String,String]) {

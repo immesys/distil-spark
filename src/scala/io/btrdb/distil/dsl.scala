@@ -247,8 +247,6 @@ object DslImplementation {
 
       //First step: grab all the metadata that matches
       var query = w.generate()
-      println("query string: ", w.toString)
-      println("query raw: ", query)
       var res = metadataCollection.find(query)
 
       def add (d : MongoDBObject, pfx : String, target : mutable.Map[String,String]) {

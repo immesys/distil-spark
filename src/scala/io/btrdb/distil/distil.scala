@@ -171,12 +171,14 @@ package object distil {
           (now, Double.NaN)
       }
       now += interval
+      println(s"now premodified: $now")
       val delta = now % 1000000000L
       if (delta < roundwhen) {
         now -= delta
       } else if (delta > 1000000000L- roundwhen) {
         now += 1000000000L - delta
       }
+      println(s"now postmodified: $now")
       rv
     }
   }

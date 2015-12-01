@@ -319,7 +319,7 @@ abstract class Distiller extends Serializable {
       println(s"turned $r into $rv")
       rv
     })
-    
+
     //Stage 4: adjust for the prefetch data that the kernel requires
     val fetchRanges = kernelSizeNanos match {
       case None => newRanges
@@ -334,39 +334,29 @@ abstract class Distiller extends Serializable {
     //Stage 4: load the partitions
     //Buffer for serialization
     val targetBTrDB = io.btrdb.distil.btrdbHost
-    println("XXX -B")
     sc.parallelize(invocationParams).map (p => {
-      println("XXX -A", p)
-      Console.err.println("XXX -+-A", p)
       val idx = p._1
       val fetch = p._2
       val range = p._3
       val b = new BTrDB(targetBTrDB, 4410)
-      println("Created BTrDB conn")
       val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
       val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)
       val inputVerSeq = inputUUIDs.map(kv => inputCurrentVersions(kv._1)).toIndexedSeq
-      println("XXX A")
       val data = io.btrdb.distil.multipleBtrdbStreamLocal(b, inputUUIDSeq,
         fetch, inputVerSeq, timeBaseAlignment)
-      println("XXX B")
       val output = immutable.Map(outputNames.map(name => (name, new mutable.ArrayBuffer[(Long, Double)](data.length))):_*)
-      println("XXX C")
       val dstartIdx = data.indexWhere(_._1 >= range._1)
-      println("XXX D")
       val thn = System.currentTimeMillis
       kernel(range, dstartIdx, data, inputMap, output, b)
       val delta = System.currentTimeMillis - thn
-      println("XXX E")
-      /*
+
       println(s"Kernel processing completed in $delta ms")
       output.foreach(kv => {
         val uu = outputUUIDs(kv._1)
         b.insertValues(uu, kv._2.view.iterator.map(tup => RawTuple(tup._1, tup._2)), true)
       })
       b.close()
-      output.map(kv => kv._2.size).foldLeft(0L)(_+_)*/
-      5L
+      output.map(kv => kv._2.size).foldLeft(0L)(_+_)
     }).reduce(_+_)
   }
 }

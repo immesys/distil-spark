@@ -347,6 +347,7 @@ abstract class Distiller extends Serializable {
       val output = immutable.Map(outputNames.map(name => (name, new mutable.ArrayBuffer[(Long, Double)](data.length))):_*)
       val dstartIdx = data.indexWhere(_._1 >= range._1)
       val thn = System.currentTimeMillis
+      println(s"kernel processed: $idx, $range")
       kernel(range, dstartIdx, data, inputMap, output, b)
       val delta = System.currentTimeMillis - thn
 

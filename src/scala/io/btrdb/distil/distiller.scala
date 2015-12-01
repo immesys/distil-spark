@@ -336,6 +336,7 @@ abstract class Distiller extends Serializable {
     println("XXX -B")
     sc.parallelize(invocationParams).map (p => {
       println("XXX -A", p)
+      Console.err.println("XXX -+-A", p)
       val idx = p._1
       val fetch = p._2
       val range = p._3

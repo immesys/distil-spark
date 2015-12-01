@@ -319,6 +319,7 @@ abstract class Distiller extends Serializable {
       println(s"turned $r into $rv")
       rv
     })
+    
     //Stage 4: adjust for the prefetch data that the kernel requires
     val fetchRanges = kernelSizeNanos match {
       case None => newRanges

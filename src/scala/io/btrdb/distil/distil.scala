@@ -120,26 +120,29 @@ package object distil {
   }
 
   lazy val loc_btrdb = new BTrDB(btrdbHost, 4410)
+  def alignPtTo120HzUsingSnapClosest(v :(Long, Double)) : (Long, Double) = {
+    val tsec = v._1 / 1000000000L
+    val resid = v._1 - tsec*1000000000L
+    val cyc = resid / 8333333
+    ((tsec*1000000000L) +
+    (if ((resid % 8333333) <= 4166666)
+    {
+      cyc*8333333
+    }
+    else
+    {
+      if (cyc == 119) //Actually the start of the next second
+        1000000000L
+      else
+        (cyc+1)*8333333
+    }), v._2)
+  }
   def alignIterTo120HzUsingSnapClosest(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])
     : Iterator[(Long, Double)] =
   {
     vz.map( v =>
     {
-      val tsec = v._1 / 1000000000L
-      val resid = v._1 - tsec*1000000000L
-      val cyc = resid / 8333333
-      ((tsec*1000000000L) +
-      (if ((resid % 8333333) <= 4166666)
-      {
-        cyc*8333333
-      }
-      else
-      {
-        if (cyc == 119) //Actually the start of the next second
-          1000000000L
-        else
-          (cyc+1)*8333333
-      }), v._2)
+      alignPtTo120HzUsingSnapClosest(v)
     })
   }
 
@@ -161,7 +164,7 @@ package object distil {
       println(s"iter now=$now head=$head hz=${vz.hasNext}")
       val rv = head match {
         case Some(v) =>
-          if (v._1 == now) {
+          if (v._1 <= now) {
             head = (if (vz.hasNext) Some(vz.next()) else None)
             v
           } else {
@@ -188,7 +191,7 @@ package object distil {
   {
     val rng = range.getOrElse(throw BTrDBException("Dense align with no bounds?"))
     val aligned = alignIterTo120HzUsingSnapClosest(None, vz)
-    new DenseIterator(rng._1, rng._2, aligned, 8333333, 1000000)
+    new DenseIterator(alignPtTo120HzUsingSnapClosest(rng._1, 0)._1, rng._2, aligned, 8333333, 1000000)
   }
 
   def alignIterTo120HzUsingFloor(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])

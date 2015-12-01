@@ -87,7 +87,6 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
     import io.btrdb.distil.dsl._
     val res = SELECT(METADATA) WHERE "Path" =~ path
     if (res.isEmpty) throw StreamNotFoundException(s"Could not find $path")
-    println("res0 was: ", res(0))
     val dd = constructDistiller(res(0)("distil/class"), res(0)("distil/classpath").split(','))
     dd.materialize(path)
   }
@@ -97,7 +96,6 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
 
     var notDone = true
     while (notDone) {
-      println(s"Iterating on PRRR: ranges=$ranges cr=$combinedRanges")
       var progress = false
       var combined = false
       var minidx = 0
@@ -110,13 +108,11 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
           }
         }
       }
-      println(s"Located minidx as $minidx prog=$progress")
       //Now see if any other ranges' starts lie before the end of min
       for (ri <- ranges.zipWithIndex) {
         if (ri._1._3) {}  //used up
         else if (ri._2 == minidx) {}
         else if (ri._1._1 <= ranges(minidx)._2) {
-          println(s"comparing against $ri")
           //This range's start lies before the end of min
           //set minidx's end to the max of the new range and min's end
           ranges(minidx) = (ranges(minidx)._1, math.max(ranges(minidx)._2, ri._1._2), false)
@@ -131,7 +127,6 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
         val t = (ranges(minidx)._1 , ranges(minidx)._2)
         combinedRanges += t
         ranges(minidx) = (0,0, true)
-        println(s"replacing minidx")
       }
     }
     combinedRanges
@@ -139,7 +134,6 @@ var clazz = classLoader.loadClass(Module.ModuleClassName)*/
 }
 @SerialVersionUID(100L)
 abstract class Distiller extends Serializable {
-  println("Abstract distiller instantiated")
   //Abstract algorithm-specific members
   val version : Int
   val maintainer : String
@@ -200,7 +194,6 @@ abstract class Distiller extends Serializable {
     //Find all streams for this instance. We are trying to find the earliest
     //set of metadata from all the outputs
     val matches2 = SELECT(METADATA) WHERE "distil/instance" =~ instanceID
-    println(s"matches2 is $matches2, instanceID is $instanceID")
     var useIDX = 0
     inputVersions = immutable.Map( inputNames.map( name => name -> matches2(useIDX)("distil/inputs/"+name)
       .split(':')(1).toLong ):_* )

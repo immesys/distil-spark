@@ -111,6 +111,9 @@ class FrequencyDistiller extends Distiller {
                db : BTrDB) = {
 
     //Our inputs are dense, so we can just use indexes. we will use 120 indexes
+    println("rangestartidx is: ", rangeStartIdx)
+    println("range is: ", range)
+    println("input0 is: ", input(0))
     val out1s = output("freq_1s")
     val outc37 = output("freq_c37")
     for (i <- rangeStartIdx until input.size) {

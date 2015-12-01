@@ -291,7 +291,7 @@ abstract class Distiller extends Serializable {
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
     val someChange = keyseq.exists(k => inputVersions(k) != inputCurrentVersions(k))
     if (!someChange) {
-      0L
+      return 0L
     }
     val ranges = keyseq.filter(k => inputVersions(k) != inputCurrentVersions(k))
                        .flatMap(k => {
@@ -301,10 +301,16 @@ abstract class Distiller extends Serializable {
     btrdb.close()
 
     //Stage 2: merge the changed ranges to a single set of ranges
-    val combinedRanges = Distiller.expandPrereqsParallel(ranges)
-    val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / sc.defaultParallelism,
+    var combinedRanges = Distiller.expandPrereqsParallel(ranges)
+    val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / (sc.defaultParallelism*3),
                                  30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
 
+    //Clamp ranges to before/after
+    combinedRanges = combinedRanges.map(t => clampRange(t)).filterNot(_.isEmpty).map(_.get)
+
+    if (combinedRanges.size == 0) {
+      return 0L
+    }
     //Stage 3: split the larger ranges so that we can get better partitioning
     val newRanges = combinedRanges.flatMap(r => {
       var segments : Long = (r._2 - r._1) / partitionHint + 1

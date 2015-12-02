@@ -161,15 +161,20 @@ package object distil {
       if (now > end) {
         throw new RuntimeException(s"huh: now=$now head=$head end=$end")
       }
+      var incnow = false
       val rv = head match {
         case Some(v) =>
           if (v._1 <= now) {
-            head = (if (vz.hasNext) Some(vz.next()) else None)
+            while (!head.isEmpty && head.get._1 <= now) {
+              head = (if (vz.hasNext) Some(vz.next()) else None)
+            }
             v
           } else {
+            incnow = true
             (now, Double.NaN)
           }
         case None =>
+          incnow = true
           (now, Double.NaN)
       }
       now += interval

@@ -235,7 +235,6 @@ abstract class Distiller extends Serializable {
       kv._1.slice(13,kv._1.size) -> kv._2
     }):_*)
 
-    println(s"Algorithm parameters: $params")
     //Lets get the current versions of the inputs
     val btrdb = sc.openDefaultBTrDB()
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
@@ -306,9 +305,9 @@ abstract class Distiller extends Serializable {
 
 
     //Clamp ranges to before/after
-    println(s"ranges before: ${combinedRanges.size} ${combinedRanges}")
+    //println(s"ranges before: ${combinedRanges.size} ${combinedRanges}")
     combinedRanges = combinedRanges.map(t => clampRange(t)).filterNot(_.isEmpty).map(_.get)
-    println(s"ranges after: ${combinedRanges.size} ${combinedRanges}")
+    //println(s"ranges after: ${combinedRanges.size} ${combinedRanges}")
 
     if (combinedRanges.size == 0) {
       return 0L

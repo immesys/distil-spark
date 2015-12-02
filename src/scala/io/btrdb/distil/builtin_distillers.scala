@@ -120,7 +120,8 @@ class FrequencyDistiller extends Distiller {
       val time = input(i)._1
 
       val v1s = angwrap(input(i)._2(0) - input(i-120)._2(0))/360.0 + 60
-      out1s += ((time, v1s))
+      if (!v1s.isNaN)
+        out1s += ((time, v1s))
 
       val p1 = input(i)._2(0)
       val p2 = input(i-1)._2(0)
@@ -130,7 +131,8 @@ class FrequencyDistiller extends Distiller {
       val v2 = angwrap(p2-p3)
       val v3 = angwrap(p3-p4)
       val c37 = 60.0 + (((6.0*(v1)+3.0*(v2)+1.0*(v3))/10)*((120.0/360.0)))
-      outc37 += ((time, c37))
+      if (!c37.isNaN)
+        outc37 += ((time, c37))
     }
     deleteAllRanges(range)(db)
   }

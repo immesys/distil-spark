@@ -232,7 +232,7 @@ abstract class Distiller extends Serializable {
 
     //Lets grab the parameters:
     params = immutable.Map(matches2(useIDX).toSeq.filter(kv => kv._1.startsWith("distil/param/")).map(kv => {
-      kv._1.slice(12,kv._1.size) -> kv._2
+      kv._1.slice(13,kv._1.size) -> kv._2
     }):_*)
 
     println(s"Algorithm parameters: $params")

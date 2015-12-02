@@ -306,7 +306,9 @@ abstract class Distiller extends Serializable {
                                  30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
 
     //Clamp ranges to before/after
+    println("ranges before: ${combinedRanges.size} ${combinedRanges}")
     combinedRanges = combinedRanges.map(t => clampRange(t)).filterNot(_.isEmpty).map(_.get)
+    println("ranges after: ${combinedRanges.size} ${combinedRanges}")
 
     if (combinedRanges.size == 0) {
       return 0L

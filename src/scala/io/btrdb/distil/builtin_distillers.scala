@@ -28,22 +28,37 @@ class MovingAverageDistiller extends Distiller {
 
     //Our inputs are dense, so we can just use indexes. we will use 120 indexes
     val out = output("avg")
+    //println(s"kernel started with input sz: ${input.size} and rangestartidx=${rangeStartIdx}")
+    if (rangeStartIdx > 0) {
+
+    }
+    //Bootstrap
+    var sum = input.view
+      .slice(rangeStartIdx-121, rangeStartIdx-1)
+      .map(x=>x._2(0))
+      .filterNot(_.isNaN)
+      .foldLeft(0.0)(_+_)
+
+    var count = input.view
+      .slice(rangeStartIdx-121, rangeStartIdx-1)
+      .map(x=>x._2(0))
+      .filterNot(_.isNaN)
+      .size
+
     for (i <- rangeStartIdx until input.size) {
+      if (!input(i-121)._2(0).isNaN) {
+        count -= 1
+        sum -= input(i-121)._2(0)
+      }
 
-      val sum = input
-        .slice(i-120, i)
-        .map(x=>x._2(0))
-        .filterNot(_.isNaN)
-        .foldLeft(0.0)(_+_)
-
-      val count = input
-        .slice(i-120, i)
-        .map(x=>x._2(0))
-        .filterNot(_.isNaN)
-        .size
+      if (!input(i)._2(0).isNaN) {
+        count += 1
+        sum += input(i)._2(0)
+      }
 
       if (count > 0)
         out += ((input(i)._1 , sum/count))
+
 
     }
     deleteAllRanges(range)(db)

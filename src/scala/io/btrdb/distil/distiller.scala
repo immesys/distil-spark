@@ -166,7 +166,7 @@ abstract class Distiller extends Serializable {
       val before = dsl.StringToTS(params("before")).t
       if (end > before) end = before
     }
-    if (start > end)
+    if (start >= end)
       None
     else
       Some((start, end))
@@ -294,7 +294,6 @@ abstract class Distiller extends Serializable {
     if (!someChange) {
       return 0L
     }
-    println("Locating changed ranges")
     val ranges = keyseq.filter(k => inputVersions(k) != inputCurrentVersions(k))
                        .flatMap(k => {
       val (errcode, _, cranges) = btrdb.getChangedRanges(inputUUIDs(k), inputVersions(k), inputCurrentVersions(k), 34)
@@ -315,8 +314,9 @@ abstract class Distiller extends Serializable {
       return 0L
     }
 
-    val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / (sc.defaultParallelism*3),
-                                 30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
+    val partitionHint = Math.min(Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / (sc.defaultParallelism*3),
+                                 30L*60L*1000000000L), //Seriously don't split finer than 30 minutes...
+                                 1*60*60*1000000000L) //But also not bigger than two hours
 
     //Stage 3: split the larger ranges so that we can get better partitioning
     val newRanges = combinedRanges.flatMap(r => {
@@ -326,8 +326,8 @@ abstract class Distiller extends Serializable {
          math.min(r._1 + (i+1)*partitionHint, r._2))
       }
       rv
-    })
-    println(s"ranges after split: ${newRanges.size} ${newRanges}")
+    }).filterNot(t=>t._1 == t._2)
+    //println(s"ranges after split: ${newRanges.size} ${newRanges}")
     //Stage 4: adjust for the prefetch data that the kernel requires
     val fetchRanges = kernelSizeNanos match {
       case None => newRanges

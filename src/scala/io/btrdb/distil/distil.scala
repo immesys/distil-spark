@@ -123,19 +123,13 @@ package object distil {
   def alignPtTo120HzUsingSnapClosest(v :(Long, Double)) : (Long, Double) = {
     val tsec = v._1 / 1000000000L
     val resid = v._1 - tsec*1000000000L
-    val cyc = resid / 8333333
+    val cyc = (resid + 4166666) / 8333333
     ((tsec*1000000000L) +
-    (if ((resid % 8333333) <= 4166666)
-    {
-      cyc*8333333
-    }
-    else
-    {
-      if (cyc == 119) //Actually the start of the next second
+    ( if (cyc == 120) //Actually the start of the next second
         1000000000L
       else
-        (cyc+1)*8333333
-    }), v._2)
+        cyc*8333333L
+    ), v._2)
   }
   def alignIterTo120HzUsingSnapClosest(range : Option[(Long, Long)], vz : Iterator[(Long, Double)])
     : Iterator[(Long, Double)] =
@@ -148,7 +142,7 @@ package object distil {
 
   class DenseIterator(start: Long, end: Long, vz : Iterator[(Long, Double)], interval : Long, roundwhen : Long)
     extends Iterator[(Long, Double)] {
-    println(s"DenseIterator constructed: s=$start e=$end i=$interval rw=$roundwhen")
+    //println(s"DenseIterator constructed: s=$start e=$end i=$interval rw=$roundwhen")
     var head : Option[(Long, Double)] = Some(vz.next)
     var now : Long = start
     def hasNext() : Boolean = {
@@ -158,15 +152,24 @@ package object distil {
       }
     }
     def next() : (Long, Double) = {
+      //This is not quite right...
       if (now > end) {
-        throw new RuntimeException(s"huh: now=$now head=$head end=$end")
+        if (head.isEmpty)
+          throw new RuntimeException(s"huh: now=$now head=$head end=$end")
+        else {
+          val rv = head.get
+          head = (if (vz.hasNext) Some(vz.next()) else None)
+          return rv
+        }
       }
+
       var incnow = false
       val rv = head match {
         case Some(v) =>
           if (v._1 <= now) {
             while (!head.isEmpty && head.get._1 <= now) {
               head = (if (vz.hasNext) Some(vz.next()) else None)
+              //println(s"for $this advanced iter to $head")
             }
             v
           } else {
@@ -184,6 +187,7 @@ package object distil {
       } else if (delta > 1000000000L- roundwhen) {
         now += 1000000000L - delta
       }
+      //println(s"now is $now")
       rv
     }
   }

@@ -304,8 +304,7 @@ abstract class Distiller extends Serializable {
 
     //Stage 2: merge the changed ranges to a single set of ranges
     var combinedRanges = Distiller.expandPrereqsParallel(ranges)
-    val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / (sc.defaultParallelism*3),
-                                 30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
+
 
     //Clamp ranges to before/after
     println(s"ranges before: ${combinedRanges.size} ${combinedRanges}")
@@ -315,6 +314,10 @@ abstract class Distiller extends Serializable {
     if (combinedRanges.size == 0) {
       return 0L
     }
+
+    val partitionHint = Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / (sc.defaultParallelism*3),
+                                 30L*60L*1000000000L) //Seriously don't split finer than 30 minutes...
+                                 
     //Stage 3: split the larger ranges so that we can get better partitioning
     val newRanges = combinedRanges.flatMap(r => {
       var segments : Long = (r._2 - r._1) / partitionHint + 1
@@ -324,7 +327,7 @@ abstract class Distiller extends Serializable {
       }
       rv
     })
-
+    println(s"ranges after split: ${combinedRanges.size} ${combinedRanges}")
     //Stage 4: adjust for the prefetch data that the kernel requires
     val fetchRanges = kernelSizeNanos match {
       case None => newRanges

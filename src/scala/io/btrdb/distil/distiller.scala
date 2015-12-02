@@ -343,6 +343,7 @@ abstract class Distiller extends Serializable {
       val idx = p._1
       val fetch = p._2
       val range = p._3
+      println(s"invoking p=$p")
       val b = new BTrDB(targetBTrDB, 4410)
       val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
       val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)

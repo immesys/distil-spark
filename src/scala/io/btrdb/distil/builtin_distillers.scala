@@ -13,11 +13,13 @@ class MovingAverageDistiller extends Distiller {
   val inputNames : Seq[String]
     = List("input")
   val kernelSizeNanos : Option[Long]
-    = Some(1.second + 500.millisecond)
+    = Some(1.minute + 500.millisecond)
   val timeBaseAlignment : Option[BTrDBAlignMethod]
     = Some(BTRDB_ALIGN_120HZ_SNAP_DENSE)
   val dropNaNs : Boolean
     = false
+
+  val ptsInWindow = 60*120
 
   override def kernel(range : (Long, Long),
                rangeStartIdx : Int,
@@ -34,21 +36,21 @@ class MovingAverageDistiller extends Distiller {
     }
     //Bootstrap
     var sum = input.view
-      .slice(rangeStartIdx-121, rangeStartIdx-1)
+      .slice(rangeStartIdx-(ptsInWindow+1), rangeStartIdx-1)
       .map(x=>x._2(0))
       .filterNot(_.isNaN)
       .foldLeft(0.0)(_+_)
 
     var count = input.view
-      .slice(rangeStartIdx-121, rangeStartIdx-1)
+      .slice(rangeStartIdx-(ptsInWindow+1), rangeStartIdx-1)
       .map(x=>x._2(0))
       .filterNot(_.isNaN)
       .size
 
     for (i <- rangeStartIdx until input.size) {
-      if (!input(i-121)._2(0).isNaN) {
+      if (!input(i-(ptsInWindow+1))._2(0).isNaN) {
         count -= 1
-        sum -= input(i-121)._2(0)
+        sum -= input(i-(ptsInWindow+1))._2(0)
       }
 
       if (!input(i)._2(0).isNaN) {

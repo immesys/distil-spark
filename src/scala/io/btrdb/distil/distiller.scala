@@ -235,6 +235,7 @@ abstract class Distiller extends Serializable {
       kv._1.slice(12,kv._1.size) -> kv._2
     }):_*)
 
+    println(s"Algorithm parameters: $params")
     //Lets get the current versions of the inputs
     val btrdb = sc.openDefaultBTrDB()
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it

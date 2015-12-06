@@ -43,19 +43,8 @@ object DslImplementation {
     override def toString : String = {
       "DEFAULT CASE"
     }
-    def unary_! = {
-      NotWhereExpression(this)
-    }
     def generate() : MongoDBObject = {
       throw new UnsupportedOperationException("Should not call parent generate")
-    }
-  }
-  case class NotWhereExpression(parent : WhereExpression) extends WhereExpression {
-    override def toString : String = {
-      "( NOT , "+parent.toString + ")"
-    }
-    override def generate() : MongoDBObject = {
-      return MongoDBObject("$not" -> parent.generate())
     }
   }
   case class HasWhereExpression(field : String) extends WhereExpression {
@@ -63,7 +52,7 @@ object DslImplementation {
       "( HAS , "+field + ")"
     }
     override def generate() : MongoDBObject = {
-      return MongoDBObject("$exists" -> MongoDBObject(field -> true))
+      return MongoDBObject(field.replaceAll("/",".") -> MongoDBObject("$exists" -> true))
     }
   }
   case class OrWhereExpression(lhs : WhereExpression, rhs : WhereExpression) extends WhereExpression {
@@ -104,6 +93,15 @@ object DslImplementation {
     }
     override def generate() : MongoDBObject = {
       return MongoDBObject(field.replaceAll("/",".") -> rhs)
+    }
+  }
+
+  case class LiteralNotWhereExpression(field : String, rhs : String) extends WhereExpression {
+    override def toString : String = {
+      "("+field+", NEQ, "+rhs+")"
+    }
+    override def generate() : MongoDBObject = {
+      return MongoDBObject(field.replaceAll("/",".") -> MongoDBObject("$ne" -> rhs))
     }
   }
 

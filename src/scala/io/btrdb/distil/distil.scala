@@ -65,6 +65,9 @@ package object distil {
       def === (rhs : String) : LiteralWhereExpression = {
         LiteralWhereExpression(s, rhs)
       }
+      def !== (rhs : String) : LiteralNotWhereExpression = {
+        LiteralNotWhereExpression(s, rhs)
+      }
     }
 
     val DROPNAN = DROPNAN_t()
@@ -114,7 +117,7 @@ package object distil {
     }
 
     def LISTLOCKED() : Seq[StreamObject] = {
-      SELECT(METADATA) WHERE !("Locks/Materialize" === "UNLOCKED")
+      SELECT(METADATA) WHERE (("Locks/Materialize" !== "UNLOCKED") && $has("Locks/Materialize"))
     }
 
     def UNLOCK(path : String) = {

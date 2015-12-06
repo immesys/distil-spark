@@ -12,14 +12,16 @@ class MovingAverageDistiller extends Distiller {
     = List("avg")
   val inputNames : Seq[String]
     = List("input")
-  val kernelSizeNanos : Option[Long]
-    = Some(1.minute + 500.millisecond)
+  val reqParams : Seq[String]
+    = List("windowSeconds")
+  def kernelSizeNanos : Option[Long]
+    = Some(params("windowSeconds").toLong.second + 500.millisecond)
   val timeBaseAlignment : Option[BTrDBAlignMethod]
     = Some(BTRDB_ALIGN_120HZ_SNAP_DENSE)
   val dropNaNs : Boolean
     = false
 
-  val ptsInWindow = 60*120
+  lazy val ptsInWindow : Int = params("windowSeconds").toInt * 120
 
   override def kernel(range : (Long, Long),
                rangeStartIdx : Int,
@@ -60,8 +62,6 @@ class MovingAverageDistiller extends Distiller {
 
       if (count > 0)
         out += ((input(i)._1 , sum/count))
-
-
     }
     deleteAllRanges(range)(db)
   }
@@ -78,7 +78,9 @@ class DoublerDistiller extends Distiller {
     = List("output")
   val inputNames : Seq[String]
     = List("input")
-  val kernelSizeNanos : Option[Long]
+  val reqParams : Seq[String]
+    = List()
+  def kernelSizeNanos : Option[Long]
     = None
   val timeBaseAlignment : Option[BTrDBAlignMethod]
     = None
@@ -108,7 +110,9 @@ class FrequencyDistiller extends Distiller {
     = List("freq_1s", "freq_c37")
   val inputNames : Seq[String]
     = List("angle")
-  val kernelSizeNanos : Option[Long]
+  val reqParams : Seq[String]
+    = List()
+  def kernelSizeNanos : Option[Long]
     = Some(1.second + 500.millisecond)
   val timeBaseAlignment : Option[BTrDBAlignMethod]
     = Some(BTRDB_ALIGN_120HZ_SNAP_DENSE)
@@ -164,7 +168,9 @@ class SlidingQuartileDistiller extends Distiller {
     = List("1st_quartile","median","3rd_quartile")
   val inputNames : Seq[String]
     = List("angle")
-  val kernelSizeNanos : Option[Long]
+  val reqParams : Seq[String]
+    = List()
+  def kernelSizeNanos : Option[Long]
     = Some(15.minute + 500.millisecond)
   val timeBaseAlignment : Option[BTrDBAlignMethod]
     = None

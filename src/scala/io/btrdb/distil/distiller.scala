@@ -45,6 +45,7 @@ object Distiller {
         outputs: Map[String, String], params: Map[String, String], name: String, jars: Seq[String])
     = {
       import io.btrdb.distil.dsl._
+
       //Check that none of the outputs exist
       outputs.foreach(kv => {
         val res = SELECT (METADATA) WHERE "Path" =~ kv._2
@@ -80,6 +81,11 @@ object Distiller {
           throw DistillerException(s"Distillate requires output '$symname'")
         }
       })
+      dd.reqParams.foreach( symname => {
+        if(!params.contains(symname)) {
+          throw DistillerException(s"Distillate requires parameter '$symname'")
+        }
+      })
       //Verify all input streams exist
       inputs.foreach (kv => {
         val res = SELECT(METADATA) WHERE "Path" =~ kv._2
@@ -87,6 +93,7 @@ object Distiller {
           throw DistillerException(s"Input '${kv._1}' is bound to nonexistant path '${kv._2}'")
         }
       })
+
       //Create all of the outputs
       outputs.foreach(kv => {
         (CREATE (kv._2) WITH (
@@ -107,11 +114,15 @@ object Distiller {
       })
   }
   def constructDistiller(klass : String, classpath : Seq[String]) : Distiller = {
-    val cpurls = classpath.map(new java.net.URL(_)).toArray
-    classpath foreach (cp => {
-      implicitSparkContext.addJar(cp)
+    var classLoader = (if (classpath.size != 0) {
+      val cpurls = classpath.map(new java.net.URL(_)).toArray
+      classpath foreach (cp => {
+        implicitSparkContext.addJar(cp)
+      })
+      new java.net.URLClassLoader(cpurls, this.getClass.getClassLoader)
+    } else {
+      this.getClass.getClassLoader
     })
-    var classLoader = new java.net.URLClassLoader(cpurls, this.getClass.getClassLoader)
     var k = classLoader.loadClass(klass)
     var rv : Distiller = k.newInstance().asInstanceOf[Distiller]
     rv
@@ -120,7 +131,8 @@ object Distiller {
     import io.btrdb.distil.dsl._
     val res = SELECT(METADATA) WHERE "Path" =~ path
     if (res.isEmpty) throw StreamNotFoundException(s"Could not find $path")
-    val dd = constructDistiller(res(0)("distil/class"), res(0)("distil/classpath").split(','))
+    val cp = (if(res(0)("distil/classpath") == "") Array[String]() else res(0)("distil/classpath").split(','))
+    val dd = constructDistiller(res(0)("distil/class"), cp)
     dd.materialize(path, identifier)
   }
   def expandPrereqsParallel(changedRanges : Seq[(Long, Long)]) : Seq[(Long, Long)] = {
@@ -173,7 +185,8 @@ abstract class Distiller extends Serializable {
   val maintainer : String
   val outputNames : Seq[String]
   val inputNames : Seq[String]
-  val kernelSizeNanos : Option[Long]
+  val reqParams : Seq[String]
+  def kernelSizeNanos : Option[Long]
   val timeBaseAlignment : Option[BTrDBAlignMethod]
   val dropNaNs : Boolean
 
@@ -339,6 +352,10 @@ abstract class Distiller extends Serializable {
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
     val someChange = keyseq.exists(k => inputVersions(k) != inputCurrentVersions(k))
     if (!someChange) {
+      println("No changes")
+      ourlocks.foreach (uu => {
+        SET ("Locks/Materialize" -> "UNLOCKED") WHERE "uuid" === uu
+      })
       return 0L
     }
     val ranges = keyseq.filter(k => inputVersions(k) != inputCurrentVersions(k))
@@ -358,6 +375,10 @@ abstract class Distiller extends Serializable {
     //println(s"ranges after: ${combinedRanges.size} ${combinedRanges}")
 
     if (combinedRanges.size == 0) {
+      println("No changes")
+      ourlocks.foreach (uu => {
+        SET ("Locks/Materialize" -> "UNLOCKED") WHERE "uuid" === uu
+      })
       return 0L
     }
 
@@ -416,6 +437,19 @@ abstract class Distiller extends Serializable {
         b.close()
         output.map(kv => kv._2.size).foldLeft(0L)(_+_)
       }).reduce(_+_)
+
+      //Set updated metadata
+      inputCurrentVersions.foreach(kv => {
+        val uu = inputUUIDs(kv._1)
+        outputUUIDs.foreach(okv => {
+          SET( ("distil/inputs/"+kv._1) -> (uu+":"+kv._2)) WHERE "uuid" === okv._2
+        })
+      })
+      outputUUIDs.foreach(okv => {
+        SET("distil/version" -> version.toString) WHERE "uuid" === okv._2
+        SET("distil/paramver" -> nextParamVer.toString) WHERE "uuid" === okv._2
+      })
+
     } finally {
       ourlocks.foreach (uu => {
         SET ("Locks/Materialize" -> "UNLOCKED") WHERE "uuid" === uu

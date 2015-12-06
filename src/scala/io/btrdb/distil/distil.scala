@@ -154,6 +154,8 @@ package object distil {
     def next() : (Long, Double) = {
       //This is not quite right...
       if (now > end) {
+        throw new RuntimeException(s"huh: now=$now head=$head end=$end")
+        /*
         if (head.isEmpty)
           throw new RuntimeException(s"huh: now=$now head=$head end=$end")
         else {
@@ -161,6 +163,7 @@ package object distil {
           head = (if (vz.hasNext) Some(vz.next()) else None)
           return rv
         }
+        */
       }
 
       var incnow = false

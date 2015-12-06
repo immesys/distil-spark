@@ -62,6 +62,9 @@ package object distil {
       def =~ (rhs : String) : RegexWhereExpression = {
         RegexWhereExpression(s, rhs)
       }
+      def === (rhs : String) : LiteralWhereExpression = {
+        LiteralWhereExpression(s, rhs)
+      }
     }
 
     val DROPNAN = DROPNAN_t()
@@ -106,8 +109,28 @@ package object distil {
       metadataCollection.remove(MongoDBObject("Path" -> path))
     }
 
-    def MATERIALIZE (path : String) : Long = {
-      io.btrdb.distil.Distiller.genericMaterialize(path)
+    def MATERIALIZE (path : String, identifier : String = "interactive") : Long = {
+      io.btrdb.distil.Distiller.genericMaterialize(path, identifier)
+    }
+
+    def LISTLOCKED() : Seq[StreamObject] = {
+      SELECT(METADATA) WHERE !("Locks/Materialize" === "UNLOCKED")
+    }
+
+    def UNLOCK(path : String) = {
+      val ires = (SELECT(METADATA) WHERE "Path" === path)
+      val instanceID = ires(0)("distil/instance")
+      SELECT(METADATA) WHERE "distil/instance" === instanceID foreach (d => {
+        SET ("Locks/Materialize" -> "UNLOCKED") WHERE "uuid" === d("uuid")
+      })
+    }
+
+    def MKDISTILLATE (klass : String) : MkDistiller = {
+      new MkDistiller(klass,
+        Array[(String, String)](),
+        Array[(String, String)](),
+        Array[(String, String)](),
+        Array[String]())
     }
 
     def BTRDB_ALIGN_120HZ_SNAP = alignIterTo120HzUsingSnapClosest _
@@ -147,13 +170,13 @@ package object distil {
     var now : Long = start
     def hasNext() : Boolean = {
       head match {
-        case Some(x) => true
+        case Some(x) => x._1 < end
         case None => now < end
       }
     }
     def next() : (Long, Double) = {
       //This is not quite right...
-      if (now > end) {
+      if (now > end || (!head.isEmpty && head.get._1 >= end)) {
         throw new RuntimeException(s"huh: now=$now head=$head end=$end")
         /*
         if (head.isEmpty)

@@ -43,8 +43,19 @@ object DslImplementation {
     override def toString : String = {
       "DEFAULT CASE"
     }
+    def unary_! = {
+      NotWhereExpression(this)
+    }
     def generate() : MongoDBObject = {
       throw new UnsupportedOperationException("Should not call parent generate")
+    }
+  }
+  case class NotWhereExpression(parent : WhereExpression) extends WhereExpression {
+    override def toString : String = {
+      "( NOT , "+parent.toString + ")"
+    }
+    override def generate() : MongoDBObject = {
+      return MongoDBObject("$not" -> parent.generate())
     }
   }
   case class HasWhereExpression(field : String) extends WhereExpression {
@@ -105,13 +116,18 @@ object DslImplementation {
   class QueryModifier
 
   class Setter (tuples : Seq[(String, String)]) {
-    def WHERE (w : WhereExpression) (implicit sc : org.apache.spark.SparkContext) {
+    def WHERE (w : WhereExpression) (implicit sc : org.apache.spark.SparkContext) : Boolean = {
       execute(w, sc)
     }
 
-    def execute (w : WhereExpression, sc : org.apache.spark.SparkContext) {
+    def execute (w : WhereExpression, sc : org.apache.spark.SparkContext) : Boolean = {
       var query = w.generate()
-      metadataCollection.findAndModify(query, MongoDBObject("$set"->MongoDBObject(tuples:_*)))
+      val ntups = tuples.map(t=>(t._1.replaceAll("/","."),t._2))
+      val rv = metadataCollection.findAndModify(query, MongoDBObject("$set"->MongoDBObject(ntups:_*)))
+      rv match {
+        case Some(x) => true
+        case None => false
+      }
     }
   }
   case class StreamExistsException(path : String) extends Exception("Stream exists: "+path)
@@ -196,6 +212,43 @@ object DslImplementation {
     }
   }
   */
+
+
+
+  class MkDistiller (klass : String,
+    inputs : Seq[(String, String)],
+    outputs : Seq[(String, String)],
+    params : Seq[(String, String)],
+    deps : Seq[String]) {
+    def INPUT (m : (String, String)*)
+      : MkDistiller = {
+      new MkDistiller(klass, inputs ++ m, outputs, params, deps)
+    }
+    def OUTPUT (m : (String, String)*)
+      : MkDistiller = {
+      new MkDistiller(klass, inputs, outputs ++ m, params, deps)
+    }
+    def PARAM (m : (String, String)*)
+      : MkDistiller = {
+      new MkDistiller(klass, inputs, outputs, params ++ m, deps)
+    }
+    def AFTER (s : String)
+      : MkDistiller = {
+      new MkDistiller(klass, inputs, outputs, params :+ (("after",s)), deps)
+    }
+    def BEFORE (s : String)
+      : MkDistiller = {
+      new MkDistiller(klass, inputs, outputs, params :+ (("before",s)), deps)
+    }
+    def WITHJAR (uri : String)
+      : MkDistiller = {
+      new MkDistiller(klass, inputs, outputs, params, deps :+ (uri))
+    }
+    def AS (name : String) {
+      Distiller.makeDistillate(klass,Map(inputs:_*),Map(outputs:_*),Map(params:_*),name,deps)
+    }
+
+  }
   import scala.language.higherKinds
   type SingleResult[T] = (StreamObject, RDD[(Long, T)])
   type MultipleResult[T] = Seq[(StreamObject, RDD[(Long, T)])]

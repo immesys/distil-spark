@@ -16,6 +16,12 @@ package object distil {
 
   type BTrDBAlignMethod = (Option[(Long, Long)], Iterator[(Long, Double)]) => Iterator[(Long, Double)]
 
+  class RootDistilException(msg : String) extends Exception(msg)
+
+  case class DistilException(msg : String) extends RootDistilException(msg)
+  case class StreamNotFoundException(msg : String) extends RootDistilException(msg)
+  case class LockedException(msg : String) extends RootDistilException(msg)
+
   case class BTrDBTimestamp (t : Long)
 
   object dsl {
@@ -46,18 +52,19 @@ package object distil {
       def day = l*24*60*60*1000000000L
     }
 
+/*
     def $eq(field : String, rhs : String) : LiteralWhereExpression = {
       LiteralWhereExpression(field, rhs)
     }
-
+*/
     def $has(field : String) : HasWhereExpression = {
       HasWhereExpression(field)
     }
-
+/*
     def $regex(field : String, rhs : String) : RegexWhereExpression = {
       RegexWhereExpression(field, rhs)
     }
-
+*/
     implicit class AutoStringRegex(val s : String) {
       def =~ (rhs : String) : RegexWhereExpression = {
         RegexWhereExpression(s, rhs)
@@ -91,17 +98,34 @@ package object distil {
         new Selector[Any, MetadataResult](sc.BTRDB_MIN_TIME, sc.BTRDB_MAX_TIME, sel, Seq.empty[QueryModifier], None, None, false)
     }
 
-    def RESOLVE (path : String) : Option[String] = {
-      val res = SELECT(METADATA) WHERE "Path" =~ path
+    def PATH2UUID (path : String) : Option[String] = {
+      val res = SELECT(METADATA) WHERE "Path" === path
       if (res.isEmpty) {
         None
+      } else if (res.size > 1) {
+        throw BTrDBException("Multiple identical paths?")
       } else {
         Some(res(0)("uuid"))
       }
     }
 
+    def SETPARAM (path : String, tuples : (String, String)*) = {
+      val ires = (SELECT(METADATA) WHERE "Path" === path)
+      val instanceID = ires(0)("distil/instance")
+      if (!LOCK(path, "sparam")) {
+        throw LockedException("Could not lock stream")
+      }
+      val paramver : Int = (SELECT (METADATA) WHERE "distil/instance" === instanceID).map(d => d("distil/paramver").toInt).max
+      val ntuples = (tuples map (t => ("distil/param/"+t._1, t._2))) :+ (("distil/nexparamver", (paramver+1).toString))
+      SETALL(ntuples:_*) WHERE "distil/instance" === instanceID
+      UNLOCK(path)
+    }
     def SET (tuples : (String, String)*): Setter = {
-      new Setter(tuples)
+      new Setter(tuples, false)
+    }
+
+    def SETALL (tuples : (String, String)*): Setter = {
+      new Setter(tuples, true)
     }
 
     def CREATE (path : String): Creator = {
@@ -118,6 +142,25 @@ package object distil {
 
     def LISTLOCKED() : Seq[StreamObject] = {
       SELECT(METADATA) WHERE (("Locks/Materialize" !== "UNLOCKED") && $has("Locks/Materialize"))
+    }
+
+    def LOCK(path : String, id : String) : Boolean = {
+      val ires = (SELECT(METADATA) WHERE "Path" === path)
+      val instanceID = ires(0)("distil/instance")
+      var ourlocks : List[String] = List()
+      val lockid = s"$id::${implicitSparkContext.applicationId}"
+      SELECT(METADATA) WHERE "distil/instance" === instanceID foreach (d => {
+        val ok =  SET ("Locks/Materialize" -> lockid) WHERE "uuid" === d.uuid && "Locks/Materialize" === "UNLOCKED"
+        if (!ok) {
+          ourlocks.foreach(uu => {
+            SET ("Locks/Materialize" -> "UNLOCKED") WHERE "uuid" === uu
+          })
+          return false
+        } else {
+          ourlocks = ourlocks :+ (d.uuid)
+        }
+      })
+      true
     }
 
     def UNLOCK(path : String) = {

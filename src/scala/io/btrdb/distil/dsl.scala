@@ -109,11 +109,13 @@ object DslImplementation {
 
   class StreamObject (elems : Tuple2[String, String]*) extends HashMap[String, String] {
     this ++= elems
+    def path : String = this("Path")
+    def uuid : String = this("uuid")
   }
 
   class QueryModifier
 
-  class Setter (tuples : Seq[(String, String)]) {
+  class Setter (tuples : Seq[(String, String)], single : Boolean) {
     def WHERE (w : WhereExpression) (implicit sc : org.apache.spark.SparkContext) : Boolean = {
       execute(w, sc)
     }
@@ -121,10 +123,15 @@ object DslImplementation {
     def execute (w : WhereExpression, sc : org.apache.spark.SparkContext) : Boolean = {
       var query = w.generate()
       val ntups = tuples.map(t=>(t._1.replaceAll("/","."),t._2))
-      val rv = metadataCollection.findAndModify(query, MongoDBObject("$set"->MongoDBObject(ntups:_*)))
-      rv match {
-        case Some(x) => true
-        case None => false
+      if (single) {
+        val rv = metadataCollection.findAndModify(query, MongoDBObject("$set"->MongoDBObject(ntups:_*)))
+        rv match {
+          case Some(x) => true
+          case None => false
+        }
+      } else {
+        var rv = metadataCollection.update(query, MongoDBObject("$set"->MongoDBObject(ntups:_*)), multi=true)
+        rv.getN > 0
       }
     }
   }

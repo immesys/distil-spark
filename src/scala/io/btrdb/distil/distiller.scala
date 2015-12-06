@@ -4,11 +4,7 @@ import io.btrdb._
 import io.jvm.uuid._
 import scala.collection.immutable
 import scala.collection.mutable
-class RootDistillerException(msg : String) extends Exception(msg)
 
-case class DistillerException(msg : String) extends RootDistillerException(msg)
-case class StreamNotFoundException(msg : String) extends RootDistillerException(msg)
-case class LockedException(msg : String) extends RootDistillerException(msg)
 
 /*
  A distiller is instatiated as a result of a MATERIALIZE or MKDISTILLATE command.
@@ -50,7 +46,7 @@ object Distiller {
       outputs.foreach(kv => {
         val res = SELECT (METADATA) WHERE "Path" =~ kv._2
         if (!res.isEmpty) {
-          throw DistillerException(s"Output stream: ${kv._2} exists")
+          throw DistilException(s"Output stream: ${kv._2} exists")
         }
       })
       val instanceID = io.jvm.uuid.UUID.random.toString
@@ -62,35 +58,35 @@ object Distiller {
       //Verify all actual are in formal
       inputs.map (i => i._1).foreach (symname => {
         if (!dd.inputNames.contains(symname)) {
-          throw DistillerException(s"Distillate does not take input '$symname'")
+          throw DistilException(s"Distillate does not take input '$symname'")
         }
       })
       outputs.map (i => i._1) foreach (symname => {
         if (!dd.outputNames.contains(symname)) {
-          throw DistillerException(s"Distillate does not have output '$symname'")
+          throw DistilException(s"Distillate does not have output '$symname'")
         }
       })
       //Verify all formal are in actual
       dd.inputNames.foreach( symname => {
         if (!inputs.contains(symname)) {
-          throw DistillerException(s"Distillate requires input '$symname'")
+          throw DistilException(s"Distillate requires input '$symname'")
         }
       })
       dd.outputNames.foreach( symname => {
         if (!outputs.contains(symname)) {
-          throw DistillerException(s"Distillate requires output '$symname'")
+          throw DistilException(s"Distillate requires output '$symname'")
         }
       })
       dd.reqParams.foreach( symname => {
         if(!params.contains(symname)) {
-          throw DistillerException(s"Distillate requires parameter '$symname'")
+          throw DistilException(s"Distillate requires parameter '$symname'")
         }
       })
       //Verify all input streams exist
       inputs.foreach (kv => {
         val res = SELECT(METADATA) WHERE "Path" =~ kv._2
         if (res.isEmpty) {
-          throw DistillerException(s"Input '${kv._1}' is bound to nonexistant path '${kv._2}'")
+          throw DistilException(s"Input '${kv._1}' is bound to nonexistant path '${kv._2}'")
         }
       })
 
@@ -109,7 +105,7 @@ object Distiller {
           "Locks/Materialize" -> "UNLOCKED"
         )
         WITH (params.map(kv => ("distil/param/"+kv._1,kv._2)).toSeq:_*)
-        WITH (inputs.map(kv => ("distil/inputs/"+kv._1,RESOLVE(kv._2).get+":1")).toSeq:_*)
+        WITH (inputs.map(kv => ("distil/inputs/"+kv._1,PATH2UUID(kv._2).get+":1")).toSeq:_*)
         FROM ())
       })
   }
@@ -228,12 +224,12 @@ abstract class Distiller extends Serializable {
       throw StreamNotFoundException(s"Could not find $path")
     }
     if (matches.size > 1) {
-      throw DistillerException(s"Multiple streams have path $path")
+      throw DistilException(s"Multiple streams have path $path")
     }
     val instanceID = io.jvm.uuid.UUID(matches(0)
       .get("distil/instance")
       .getOrElse(
-        throw DistillerException(
+        throw DistilException(
           s"$path does not seem to be a distillate")))
       .toString
 
@@ -286,7 +282,7 @@ abstract class Distiller extends Serializable {
     val btrdb = sc.openDefaultBTrDB()
     val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
     val (errcode, vers) = btrdb.getVersions(keyseq.map(inputUUIDs(_)))
-    if (errcode != "OK") throw DistillerException("BTrDB error: "+errcode)
+    if (errcode != "OK") throw DistilException("BTrDB error: "+errcode)
     inputCurrentVersions = immutable.Map( keyseq.zip(vers.toIndexedSeq):_* )
     btrdb.close()
 
@@ -311,7 +307,7 @@ abstract class Distiller extends Serializable {
     outputUUIDs.map { case (_, uu) => {
       val stat = db.deleteValues(uu, range._1, range._2)
       if (stat != "OK") {
-        throw DistillerException("could not delete range")
+        throw DistilException("could not delete range")
       }
     }}
   }
@@ -319,7 +315,7 @@ abstract class Distiller extends Serializable {
   def deleteRange(output : String, range : (Long, Long)) (implicit db : BTrDB) {
     val stat = db.deleteValues(outputUUIDs(output), range._1, range._2)
     if (stat != "OK") {
-      throw DistillerException("could not delete range")
+      throw DistilException("could not delete range")
     }
   }
 
@@ -347,10 +343,39 @@ abstract class Distiller extends Serializable {
       ourlocks = ourlocks :+ (kv._2)
     })
 
-    //Stage 1: find all the changed ranges in the inputs
+    //If we require full computation, issue a delete now
     val btrdb = implicitSparkContext.openDefaultBTrDB()
-    val keyseq = inputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
-    val someChange = keyseq.exists(k => inputVersions(k) != inputCurrentVersions(k))
+    if (requireFullRecomputation) {
+      outputUUIDs.foreach {case (symname, uuid) => {
+        btrdb.deleteValues(uuid, implicitSparkContext.BTRDB_MIN_TIME, implicitSparkContext.BTRDB_MAX_TIME)
+      }}
+    }
+
+    //Possibly override inputVersions if we require full recomputation
+    val shadowInputVersions : Map[String, Long] = (if (requireFullRecomputation) {
+      inputVersions map (kv => (kv._1 -> 1L))
+    } else {
+      inputVersions
+    })
+
+    //Possibly override inputCurrentVersions if the delta is too big
+    //Disabled for now because it means that "MATERIALIZE" no longer
+    //guarantees the stream is up to date
+    /*
+    val maxVersionDelta = 4000000000/16000 // 4 billion points roughly
+    val shadowInputCurrentVersions : Map[String, Long] =
+      inputCurrentVersions map (kv => {
+        if (kv._2 - inputVersions(kv._1) > maxVersionDelta)
+          kv._1 -> (inputVersions(kv._1) + maxVersionDelta)
+        else
+          kv._1 -> kv._2
+      })
+    */
+    val shadowInputCurrentVersions = inputCurrentVersions
+
+    //Stage 1: find all the changed ranges in the inputs
+    val keyseq = shadowInputVersions.keys.toIndexedSeq //not sure this is stable, so keep it
+    val someChange = keyseq.exists(k => shadowInputVersions(k) != shadowInputCurrentVersions(k))
     if (!someChange) {
       println("No changes")
       ourlocks.foreach (uu => {
@@ -358,9 +383,9 @@ abstract class Distiller extends Serializable {
       })
       return 0L
     }
-    val ranges = keyseq.filter(k => inputVersions(k) != inputCurrentVersions(k))
+    val ranges = keyseq.filter(k => shadowInputVersions(k) != shadowInputCurrentVersions(k))
                        .flatMap(k => {
-      val (errcode, _, cranges) = btrdb.getChangedRanges(inputUUIDs(k), inputVersions(k), inputCurrentVersions(k), 34)
+      val (errcode, _, cranges) = btrdb.getChangedRanges(inputUUIDs(k), shadowInputVersions(k), shadowInputCurrentVersions(k), 34)
       cranges.map(x=>(x.start, x.end))
     }).toIndexedSeq
     btrdb.close()
@@ -368,11 +393,8 @@ abstract class Distiller extends Serializable {
     //Stage 2: merge the changed ranges to a single set of ranges
     var combinedRanges = Distiller.expandPrereqsParallel(ranges)
 
-
     //Clamp ranges to before/after
-    //println(s"ranges before: ${combinedRanges.size} ${combinedRanges}")
     combinedRanges = combinedRanges.map(t => clampRange(t)).filterNot(_.isEmpty).map(_.get)
-    //println(s"ranges after: ${combinedRanges.size} ${combinedRanges}")
 
     if (combinedRanges.size == 0) {
       println("No changes")
@@ -384,7 +406,7 @@ abstract class Distiller extends Serializable {
 
     val partitionHint = Math.min(Math.max(combinedRanges.map(r => r._2 - r._1).foldLeft(0L)(_ + _) / (implicitSparkContext.defaultParallelism*3),
                                  30L*60L*1000000000L), //Seriously don't split finer than 30 minutes...
-                                 1*60*60*1000000000L) //But also not bigger than two hours
+                                 2*60*60*1000000000L) //But also not bigger than two hours
 
     //Stage 3: split the larger ranges so that we can get better partitioning
     val newRanges = combinedRanges.flatMap(r => {
@@ -420,7 +442,7 @@ abstract class Distiller extends Serializable {
         val b = new BTrDB(targetBTrDB, 4410)
         val inputUUIDSeq = inputUUIDs.map(kv => kv._2).toIndexedSeq
         val inputMap = immutable.Map(inputUUIDs.keys.zipWithIndex.toSeq:_*)
-        val inputVerSeq = inputUUIDs.map(kv => inputCurrentVersions(kv._1)).toIndexedSeq
+        val inputVerSeq = inputUUIDs.map(kv => shadowInputCurrentVersions(kv._1)).toIndexedSeq
         val data = io.btrdb.distil.multipleBtrdbStreamLocal(b, inputUUIDSeq,
           fetch, inputVerSeq, timeBaseAlignment)
         val output = immutable.Map(outputNames.map(name => (name, new mutable.ArrayBuffer[(Long, Double)](data.length))):_*)
@@ -439,7 +461,7 @@ abstract class Distiller extends Serializable {
       }).reduce(_+_)
 
       //Set updated metadata
-      inputCurrentVersions.foreach(kv => {
+      shadowInputCurrentVersions.foreach(kv => {
         val uu = inputUUIDs(kv._1)
         outputUUIDs.foreach(okv => {
           SET( ("distil/inputs/"+kv._1) -> (uu+":"+kv._2)) WHERE "uuid" === okv._2

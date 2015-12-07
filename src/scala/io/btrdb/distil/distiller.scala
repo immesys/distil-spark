@@ -267,8 +267,6 @@ abstract class Distiller extends Serializable {
     if (lastParamVer != nextParamVer) {
       println("The algorithm parameter version has changed\nWill do full recompute to ensure consistency")
       requireFullRecomputation = true
-    } else {
-      println(s"The parameter version numbers are the same: $lastParamVer $nextParamVer")
     }
     if (lastVersion != version) {
       println("The algorithm implementation version has changed\nWill do full recompute to ensure consistency")

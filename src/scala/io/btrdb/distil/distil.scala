@@ -116,7 +116,7 @@ package object distil {
         throw LockedException("Could not lock stream")
       }
       val paramver : Int = (SELECT (METADATA) WHERE "distil/instance" === instanceID).map(d => d("distil/paramver").toInt).max
-      val ntuples = (tuples map (t => ("distil/param/"+t._1, t._2))) :+ (("distil/nexparamver", (paramver+1).toString))
+      val ntuples = (tuples map (t => ("distil/param/"+t._1, t._2))) :+ (("distil/nextparamver", (paramver+1).toString))
       SETALL(ntuples:_*) WHERE "distil/instance" === instanceID
       UNLOCK(path)
     }

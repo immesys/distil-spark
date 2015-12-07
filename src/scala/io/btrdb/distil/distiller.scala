@@ -111,11 +111,16 @@ object Distiller {
   }
   def constructDistiller(klass : String, classpath : Seq[String]) : Distiller = {
     var classLoader = (if (classpath.size != 0) {
-      val cpurls = classpath.map(new java.net.URL(_)).toArray
+      val cpurls = classpath.map(new java.net.URI(_).toURL).toArray
+      cpurls foreach (u => {
+        if (u.openConnection().asInstanceOf[java.net.HttpURLConnection].getResponseCode != 200) {
+          throw DistilException(s"Cannot load JAR '$u'")
+        }
+      })
       classpath foreach (cp => {
         implicitSparkContext.addJar(cp)
       })
-      new java.net.URLClassLoader(cpurls, this.getClass.getClassLoader)
+      new scala.tools.nsc.util.ScalaClassLoader.URLClassLoader(cpurls, this.getClass.getClassLoader)
     } else {
       this.getClass.getClassLoader
     })

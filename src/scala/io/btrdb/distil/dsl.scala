@@ -33,6 +33,8 @@ object DslImplementation {
 
   case class DROPNAN_t() extends QueryModifier
 
+  case class WindowDepthRestriction(depth : Int) extends QueryModifier
+
   class WhereExpression() {
     def && (w : WhereExpression) : AndWhereExpression = {
       AndWhereExpression(this, w)
@@ -284,6 +286,11 @@ object DslImplementation {
         new Selector[StatTuple, C](startT, endT, sel, mods, align, Some((false, l)), joined)
     }
 
+    def PRECISION (l : Long) : Selector[T, C] = {
+        val pw = (Math.floor(Math.log(l)/Math.log(2))).toInt
+        new Selector[T, C](startT, endT, sel, mods ++ Array(WindowDepthRestriction(pw)), align, window, joined)
+    }
+
     def BINWINDOW (l : Long) : Selector[StatTuple, C] = {
         val pw = (Math.floor(Math.log(l)/Math.log(2))).toInt
         new Selector[StatTuple, C](startT, endT, sel, mods, align, Some((true, pw)), joined)
@@ -341,7 +348,9 @@ object DslImplementation {
                     val dat = (if (doBin) {
                       sc.btrdbStatisticalStream(so("uuid"), startT.t, endT.t, param.toInt, sc.BTRDB_LATEST_VER)
                     } else {
-                      sc.btrdbWindowStream(so("uuid"), startT.t, endT.t, 0, param, sc.BTRDB_LATEST_VER)
+                      val depth = mods.filter(_.isInstanceOf[WindowDepthRestriction]).headOption
+                        .getOrElse(WindowDepthRestriction(0)).asInstanceOf[WindowDepthRestriction].depth
+                      sc.btrdbWindowStream(so("uuid"), startT.t, endT.t, depth, param, sc.BTRDB_LATEST_VER)
                     })
                     (so, dat)
                 }
